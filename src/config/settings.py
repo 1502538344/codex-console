@@ -10,9 +10,12 @@ from pydantic import BaseModel, field_validator
 from pydantic.types import SecretStr
 from dataclasses import dataclass
 
+from .system_proxy import get_system_proxy_url
+
 
 class SettingCategory(str, Enum):
     """设置分类"""
+
     GENERAL = "general"
     DATABASE = "database"
     WEBUI = "webui"
@@ -30,6 +33,7 @@ class SettingCategory(str, Enum):
 @dataclass
 class SettingDefinition:
     """设置定义"""
+
     db_key: str
     default_value: Any
     category: SettingCategory
@@ -44,392 +48,378 @@ SETTING_DEFINITIONS: Dict[str, SettingDefinition] = {
         db_key="app.name",
         default_value="OpenAI/Codex CLI 自动注册系统",
         category=SettingCategory.GENERAL,
-        description="应用名称"
+        description="应用名称",
     ),
     "app_version": SettingDefinition(
         db_key="app.version",
         default_value="1.1.1",
         category=SettingCategory.GENERAL,
-        description="应用版本"
+        description="应用版本",
     ),
     "debug": SettingDefinition(
         db_key="app.debug",
         default_value=False,
         category=SettingCategory.GENERAL,
-        description="调试模式"
+        description="调试模式",
     ),
-
     # 数据库配置
     "database_url": SettingDefinition(
         db_key="database.url",
         default_value="data/database.db",
         category=SettingCategory.DATABASE,
-        description="数据库路径或连接字符串"
+        description="数据库路径或连接字符串",
     ),
-
     # Web UI 配置
     "webui_host": SettingDefinition(
         db_key="webui.host",
         default_value="0.0.0.0",
         category=SettingCategory.WEBUI,
-        description="Web UI 监听地址"
+        description="Web UI 监听地址",
     ),
     "webui_port": SettingDefinition(
         db_key="webui.port",
         default_value=8000,
         category=SettingCategory.WEBUI,
-        description="Web UI 监听端口"
+        description="Web UI 监听端口",
     ),
     "webui_secret_key": SettingDefinition(
         db_key="webui.secret_key",
         default_value="your-secret-key-change-in-production",
         category=SettingCategory.WEBUI,
         description="Web UI 密钥",
-        is_secret=True
+        is_secret=True,
     ),
     "webui_access_password": SettingDefinition(
         db_key="webui.access_password",
         default_value="admin123",
         category=SettingCategory.WEBUI,
         description="Web UI 访问密码",
-        is_secret=True
+        is_secret=True,
     ),
-
     # 日志配置
     "log_level": SettingDefinition(
         db_key="log.level",
         default_value="INFO",
         category=SettingCategory.LOG,
-        description="日志级别"
+        description="日志级别",
     ),
     "log_file": SettingDefinition(
         db_key="log.file",
         default_value="logs/app.log",
         category=SettingCategory.LOG,
-        description="日志文件路径"
+        description="日志文件路径",
     ),
     "log_retention_days": SettingDefinition(
         db_key="log.retention_days",
         default_value=30,
         category=SettingCategory.LOG,
-        description="日志保留天数"
+        description="日志保留天数",
     ),
-
     # OpenAI 配置
     "openai_client_id": SettingDefinition(
         db_key="openai.client_id",
         default_value="app_EMoamEEZ73f0CkXaXp7hrann",
         category=SettingCategory.OPENAI,
-        description="OpenAI OAuth 客户端 ID"
+        description="OpenAI OAuth 客户端 ID",
     ),
     "openai_auth_url": SettingDefinition(
         db_key="openai.auth_url",
         default_value="https://auth.openai.com/oauth/authorize",
         category=SettingCategory.OPENAI,
-        description="OpenAI OAuth 授权 URL"
+        description="OpenAI OAuth 授权 URL",
     ),
     "openai_token_url": SettingDefinition(
         db_key="openai.token_url",
         default_value="https://auth.openai.com/oauth/token",
         category=SettingCategory.OPENAI,
-        description="OpenAI OAuth Token URL"
+        description="OpenAI OAuth Token URL",
     ),
     "openai_redirect_uri": SettingDefinition(
         db_key="openai.redirect_uri",
         default_value="http://localhost:1455/auth/callback",
         category=SettingCategory.OPENAI,
-        description="OpenAI OAuth 回调 URI"
+        description="OpenAI OAuth 回调 URI",
     ),
     "openai_scope": SettingDefinition(
         db_key="openai.scope",
         default_value="openid email profile offline_access",
         category=SettingCategory.OPENAI,
-        description="OpenAI OAuth 权限范围"
+        description="OpenAI OAuth 权限范围",
     ),
-
     # 代理配置
     "proxy_enabled": SettingDefinition(
         db_key="proxy.enabled",
         default_value=False,
         category=SettingCategory.PROXY,
-        description="是否启用代理"
+        description="是否启用代理",
     ),
     "proxy_type": SettingDefinition(
         db_key="proxy.type",
         default_value="http",
         category=SettingCategory.PROXY,
-        description="代理类型 (http/socks5)"
+        description="代理类型 (http/socks5)",
     ),
     "proxy_host": SettingDefinition(
         db_key="proxy.host",
         default_value="127.0.0.1",
         category=SettingCategory.PROXY,
-        description="代理服务器地址"
+        description="代理服务器地址",
     ),
     "proxy_port": SettingDefinition(
         db_key="proxy.port",
         default_value=7890,
         category=SettingCategory.PROXY,
-        description="代理服务器端口"
+        description="代理服务器端口",
     ),
     "proxy_username": SettingDefinition(
         db_key="proxy.username",
         default_value="",
         category=SettingCategory.PROXY,
-        description="代理用户名"
+        description="代理用户名",
     ),
     "proxy_password": SettingDefinition(
         db_key="proxy.password",
         default_value="",
         category=SettingCategory.PROXY,
         description="代理密码",
-        is_secret=True
+        is_secret=True,
     ),
     "proxy_dynamic_enabled": SettingDefinition(
         db_key="proxy.dynamic_enabled",
         default_value=False,
         category=SettingCategory.PROXY,
-        description="是否启用动态代理"
+        description="是否启用动态代理",
     ),
     "proxy_dynamic_api_url": SettingDefinition(
         db_key="proxy.dynamic_api_url",
         default_value="",
         category=SettingCategory.PROXY,
-        description="动态代理 API 地址，返回代理 URL 字符串"
+        description="动态代理 API 地址，返回代理 URL 字符串",
     ),
     "proxy_dynamic_api_key": SettingDefinition(
         db_key="proxy.dynamic_api_key",
         default_value="",
         category=SettingCategory.PROXY,
         description="动态代理 API 密钥（可选）",
-        is_secret=True
+        is_secret=True,
     ),
     "proxy_dynamic_api_key_header": SettingDefinition(
         db_key="proxy.dynamic_api_key_header",
         default_value="X-API-Key",
         category=SettingCategory.PROXY,
-        description="动态代理 API 密钥请求头名称"
+        description="动态代理 API 密钥请求头名称",
     ),
     "proxy_dynamic_result_field": SettingDefinition(
         db_key="proxy.dynamic_result_field",
         default_value="",
         category=SettingCategory.PROXY,
-        description="从 JSON 响应中提取代理 URL 的字段路径（留空则使用响应原文）"
+        description="从 JSON 响应中提取代理 URL 的字段路径（留空则使用响应原文）",
     ),
-
     # 注册配置
     "registration_max_retries": SettingDefinition(
         db_key="registration.max_retries",
         default_value=3,
         category=SettingCategory.REGISTRATION,
-        description="注册最大重试次数"
+        description="注册最大重试次数",
     ),
     "registration_timeout": SettingDefinition(
         db_key="registration.timeout",
         default_value=120,
         category=SettingCategory.REGISTRATION,
-        description="注册超时时间（秒）"
+        description="注册超时时间（秒）",
     ),
     "registration_default_password_length": SettingDefinition(
         db_key="registration.default_password_length",
         default_value=12,
         category=SettingCategory.REGISTRATION,
-        description="默认密码长度"
+        description="默认密码长度",
     ),
     "registration_sleep_min": SettingDefinition(
         db_key="registration.sleep_min",
         default_value=5,
         category=SettingCategory.REGISTRATION,
-        description="注册间隔最小值（秒）"
+        description="注册间隔最小值（秒）",
     ),
     "registration_sleep_max": SettingDefinition(
         db_key="registration.sleep_max",
         default_value=30,
         category=SettingCategory.REGISTRATION,
-        description="注册间隔最大值（秒）"
+        description="注册间隔最大值（秒）",
     ),
     "registration_entry_flow": SettingDefinition(
         db_key="registration.entry_flow",
         default_value="native",
         category=SettingCategory.REGISTRATION,
-        description="注册入口链路（native=原本链路, abcard=ABCard入口链路；Outlook 邮箱会自动走 Outlook 链路）"
+        description="注册入口链路（native=原本链路, abcard=ABCard入口链路；Outlook 邮箱会自动走 Outlook 链路）",
     ),
-
     # 邮箱服务配置
     "email_service_priority": SettingDefinition(
         db_key="email.service_priority",
         default_value={"tempmail": 0, "yyds_mail": 1, "outlook": 2, "moe_mail": 3},
         category=SettingCategory.EMAIL,
-        description="邮箱服务优先级"
+        description="邮箱服务优先级",
     ),
-
     # Tempmail.lol 配置
     "tempmail_enabled": SettingDefinition(
         db_key="tempmail.enabled",
         default_value=True,
         category=SettingCategory.TEMPMAIL,
-        description="是否启用 Tempmail 渠道"
+        description="是否启用 Tempmail 渠道",
     ),
     "tempmail_base_url": SettingDefinition(
         db_key="tempmail.base_url",
         default_value="https://api.tempmail.lol/v2",
         category=SettingCategory.TEMPMAIL,
-        description="Tempmail API 地址"
+        description="Tempmail API 地址",
     ),
     "tempmail_timeout": SettingDefinition(
         db_key="tempmail.timeout",
         default_value=30,
         category=SettingCategory.TEMPMAIL,
-        description="Tempmail 超时时间（秒）"
+        description="Tempmail 超时时间（秒）",
     ),
     "tempmail_max_retries": SettingDefinition(
         db_key="tempmail.max_retries",
         default_value=3,
         category=SettingCategory.TEMPMAIL,
-        description="Tempmail 最大重试次数"
+        description="Tempmail 最大重试次数",
     ),
     "yyds_mail_enabled": SettingDefinition(
         db_key="yyds_mail.enabled",
         default_value=False,
         category=SettingCategory.TEMPMAIL,
-        description="是否启用 YYDS Mail 渠道"
+        description="是否启用 YYDS Mail 渠道",
     ),
     "yyds_mail_base_url": SettingDefinition(
         db_key="yyds_mail.base_url",
         default_value="https://maliapi.215.im/v1",
         category=SettingCategory.TEMPMAIL,
-        description="YYDS Mail API 地址"
+        description="YYDS Mail API 地址",
     ),
     "yyds_mail_api_key": SettingDefinition(
         db_key="yyds_mail.api_key",
         default_value="",
         category=SettingCategory.TEMPMAIL,
         description="YYDS Mail API Key",
-        is_secret=True
+        is_secret=True,
     ),
     "yyds_mail_default_domain": SettingDefinition(
         db_key="yyds_mail.default_domain",
         default_value="",
         category=SettingCategory.TEMPMAIL,
-        description="YYDS Mail 默认域名"
+        description="YYDS Mail 默认域名",
     ),
     "yyds_mail_timeout": SettingDefinition(
         db_key="yyds_mail.timeout",
         default_value=30,
         category=SettingCategory.TEMPMAIL,
-        description="YYDS Mail 超时时间（秒）"
+        description="YYDS Mail 超时时间（秒）",
     ),
     "yyds_mail_max_retries": SettingDefinition(
         db_key="yyds_mail.max_retries",
         default_value=3,
         category=SettingCategory.TEMPMAIL,
-        description="YYDS Mail 最大重试次数"
+        description="YYDS Mail 最大重试次数",
     ),
-
     # 自定义域名邮箱配置
     "custom_domain_base_url": SettingDefinition(
         db_key="custom_domain.base_url",
         default_value="",
         category=SettingCategory.CUSTOM_DOMAIN,
-        description="自定义域名 API 地址"
+        description="自定义域名 API 地址",
     ),
     "custom_domain_api_key": SettingDefinition(
         db_key="custom_domain.api_key",
         default_value="",
         category=SettingCategory.CUSTOM_DOMAIN,
         description="自定义域名 API 密钥",
-        is_secret=True
+        is_secret=True,
     ),
-
     # 安全配置
     "encryption_key": SettingDefinition(
         db_key="security.encryption_key",
         default_value="your-encryption-key-change-in-production",
         category=SettingCategory.SECURITY,
         description="加密密钥",
-        is_secret=True
+        is_secret=True,
     ),
-
     # Team Manager 配置
     "tm_enabled": SettingDefinition(
         db_key="tm.enabled",
         default_value=False,
         category=SettingCategory.GENERAL,
-        description="是否启用 Team Manager 上传"
+        description="是否启用 Team Manager 上传",
     ),
     "tm_api_url": SettingDefinition(
         db_key="tm.api_url",
         default_value="",
         category=SettingCategory.GENERAL,
-        description="Team Manager API 地址"
+        description="Team Manager API 地址",
     ),
     "tm_api_key": SettingDefinition(
         db_key="tm.api_key",
         default_value="",
         category=SettingCategory.GENERAL,
         description="Team Manager API Key",
-        is_secret=True
+        is_secret=True,
     ),
-
     # CPA 上传配置
     "cpa_enabled": SettingDefinition(
         db_key="cpa.enabled",
         default_value=False,
         category=SettingCategory.CPA,
-        description="是否启用 CPA 上传"
+        description="是否启用 CPA 上传",
     ),
     "cpa_api_url": SettingDefinition(
         db_key="cpa.api_url",
         default_value="",
         category=SettingCategory.CPA,
-        description="CPA API 地址"
+        description="CPA API 地址",
     ),
     "cpa_api_token": SettingDefinition(
         db_key="cpa.api_token",
         default_value="",
         category=SettingCategory.CPA,
         description="CPA API Token",
-        is_secret=True
+        is_secret=True,
     ),
-
     # 验证码配置
     "email_code_timeout": SettingDefinition(
         db_key="email_code.timeout",
         default_value=120,
         category=SettingCategory.EMAIL,
-        description="验证码等待超时时间（秒）"
+        description="验证码等待超时时间（秒）",
     ),
     "email_code_poll_interval": SettingDefinition(
         db_key="email_code.poll_interval",
         default_value=3,
         category=SettingCategory.EMAIL,
-        description="验证码轮询间隔（秒）"
+        description="验证码轮询间隔（秒）",
     ),
-
     # Outlook 配置
     "outlook_provider_priority": SettingDefinition(
         db_key="outlook.provider_priority",
         default_value=["imap_old", "imap_new", "graph_api"],
         category=SettingCategory.EMAIL,
-        description="Outlook 提供者优先级"
+        description="Outlook 提供者优先级",
     ),
     "outlook_health_failure_threshold": SettingDefinition(
         db_key="outlook.health_failure_threshold",
         default_value=5,
         category=SettingCategory.EMAIL,
-        description="Outlook 提供者连续失败次数阈值"
+        description="Outlook 提供者连续失败次数阈值",
     ),
     "outlook_health_disable_duration": SettingDefinition(
         db_key="outlook.health_disable_duration",
         default_value=60,
         category=SettingCategory.EMAIL,
-        description="Outlook 提供者禁用时长（秒）"
+        description="Outlook 提供者禁用时长（秒）",
     ),
     "outlook_default_client_id": SettingDefinition(
         db_key="outlook.default_client_id",
         default_value="24d9a0ed-8787-4584-883c-2fd79308940a",
         category=SettingCategory.EMAIL,
-        description="Outlook OAuth 默认 Client ID"
+        description="Outlook OAuth 默认 Client ID",
     ),
 }
 
@@ -492,6 +482,7 @@ def _convert_value(attr_name: str, value: str) -> Any:
             return {}
         import json
         import ast
+
         try:
             return json.loads(value)
         except (json.JSONDecodeError, ValueError):
@@ -506,6 +497,7 @@ def _convert_value(attr_name: str, value: str) -> Any:
             return []
         import json
         import ast
+
         try:
             return json.loads(value)
         except (json.JSONDecodeError, ValueError):
@@ -519,9 +511,9 @@ def _convert_value(attr_name: str, value: str) -> Any:
 
 def _normalize_database_url(url: str) -> str:
     if url.startswith("postgres://"):
-        return "postgresql+psycopg://" + url[len("postgres://"):]
+        return "postgresql+psycopg://" + url[len("postgres://") :]
     if url.startswith("postgresql://"):
-        return "postgresql+psycopg://" + url[len("postgresql://"):]
+        return "postgresql+psycopg://" + url[len("postgresql://") :]
     return url
 
 
@@ -533,6 +525,7 @@ def _value_to_string(value: Any) -> str:
         return "true" if value else "false"
     elif isinstance(value, (dict, list)):
         import json
+
         return json.dumps(value)
     elif value is None:
         return ""
@@ -555,7 +548,9 @@ def init_default_settings() -> None:
                 if not existing:
                     default_value = defn.default_value
                     if attr_name == "database_url":
-                        env_url = os.environ.get("APP_DATABASE_URL") or os.environ.get("DATABASE_URL")
+                        env_url = os.environ.get("APP_DATABASE_URL") or os.environ.get(
+                            "DATABASE_URL"
+                        )
                         if env_url:
                             default_value = _normalize_database_url(env_url)
                     default_value = _value_to_string(default_value)
@@ -564,9 +559,11 @@ def init_default_settings() -> None:
                         defn.db_key,
                         default_value,
                         category=defn.category.value,
-                        description=defn.description
+                        description=defn.description,
                     )
-                    print(f"[Settings] 初始化默认设置: {defn.db_key} = {default_value if not defn.is_secret else '***'}")
+                    print(
+                        f"[Settings] 初始化默认设置: {defn.db_key} = {default_value if not defn.is_secret else '***'}"
+                    )
     except Exception as e:
         if "未初始化" not in str(e):
             print(f"[Settings] 初始化默认设置失败: {e}")
@@ -583,11 +580,17 @@ def _load_settings_from_db() -> Dict[str, Any]:
             for attr_name, defn in SETTING_DEFINITIONS.items():
                 db_setting = get_setting(db, defn.db_key)
                 if db_setting:
-                    settings_dict[attr_name] = _convert_value(attr_name, db_setting.value)
+                    settings_dict[attr_name] = _convert_value(
+                        attr_name, str(db_setting.value or "")
+                    )
                 else:
                     # 数据库中没有此设置，使用默认值
-                    settings_dict[attr_name] = _convert_value(attr_name, _value_to_string(defn.default_value))
-            env_url = os.environ.get("APP_DATABASE_URL") or os.environ.get("DATABASE_URL")
+                    settings_dict[attr_name] = _convert_value(
+                        attr_name, _value_to_string(defn.default_value)
+                    )
+            env_url = os.environ.get("APP_DATABASE_URL") or os.environ.get(
+                "DATABASE_URL"
+            )
             if env_url:
                 settings_dict["database_url"] = _normalize_database_url(env_url)
             env_host = os.environ.get("APP_HOST")
@@ -625,7 +628,7 @@ def _save_settings_to_db(**kwargs) -> None:
                         defn.db_key,
                         str_value,
                         category=defn.category.value,
-                        description=defn.description
+                        description=defn.description,
                     )
     except Exception as e:
         if "未初始化" not in str(e):
@@ -645,7 +648,7 @@ class Settings(BaseModel):
     # 数据库配置
     database_url: str = "data/database.db"
 
-    @field_validator('database_url', mode='before')
+    @field_validator("database_url", mode="before")
     @classmethod
     def validate_database_url(cls, v):
         if isinstance(v, str):
@@ -655,7 +658,15 @@ class Settings(BaseModel):
                 return v
         if isinstance(v, str) and v.startswith("sqlite:///"):
             return v
-        if isinstance(v, str) and not v.startswith(("sqlite:///", "postgresql://", "postgresql+psycopg://", "postgresql+psycopg2://", "mysql://")):
+        if isinstance(v, str) and not v.startswith(
+            (
+                "sqlite:///",
+                "postgresql://",
+                "postgresql+psycopg://",
+                "postgresql+psycopg2://",
+                "mysql://",
+            )
+        ):
             # 如果是文件路径，转换为 SQLite URL
             if os.path.isabs(v) or ":/" not in v:
                 return f"sqlite:///{v}"
@@ -693,8 +704,7 @@ class Settings(BaseModel):
     proxy_dynamic_result_field: str = ""
 
     @property
-    def proxy_url(self) -> Optional[str]:
-        """获取完整的代理 URL"""
+    def configured_proxy_url(self) -> Optional[str]:
         if not self.proxy_enabled:
             return None
 
@@ -711,6 +721,10 @@ class Settings(BaseModel):
 
         return f"{scheme}://{auth}{self.proxy_host}:{self.proxy_port}"
 
+    @property
+    def proxy_url(self) -> Optional[str]:
+        return self.configured_proxy_url or get_system_proxy_url()
+
     # 注册配置
     registration_max_retries: int = 3
     registration_timeout: int = 120
@@ -720,7 +734,12 @@ class Settings(BaseModel):
     registration_entry_flow: str = "native"
 
     # 邮箱服务配置
-    email_service_priority: Dict[str, int] = {"tempmail": 0, "yyds_mail": 1, "outlook": 2, "moe_mail": 3}
+    email_service_priority: Dict[str, int] = {
+        "tempmail": 0,
+        "yyds_mail": 1,
+        "outlook": 2,
+        "moe_mail": 3,
+    }
 
     # Tempmail.lol 配置
     tempmail_enabled: bool = True

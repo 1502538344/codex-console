@@ -34,7 +34,9 @@ class TempMailService(BaseEmailService):
     不走代理，不使用 requests 库
     """
 
-    def __init__(self, config: Dict[str, Any] = None, name: str = None):
+    def __init__(
+        self, config: Optional[Dict[str, Any]] = None, name: Optional[str] = None
+    ):
         """
         初始化 TempMail 服务
 
@@ -67,7 +69,10 @@ class TempMailService(BaseEmailService):
             timeout=self.config["timeout"],
             max_retries=self.config["max_retries"],
         )
-        self.http_client = HTTPClient(proxy_url=None, config=http_config)
+        self.http_client = HTTPClient(
+            proxy_url=self.config.get("proxy_url"),
+            config=http_config,
+        )
 
         # 邮箱缓存：email -> {jwt, address}
         self._email_cache: Dict[str, Dict[str, Any]] = {}
@@ -99,10 +104,20 @@ class TempMailService(BaseEmailService):
                 try:
                     payload = part.get_payload(decode=True)
                     charset = part.get_content_charset() or "utf-8"
-                    text = payload.decode(charset, errors="replace") if payload else ""
+                    if isinstance(payload, bytes):
+                        text = payload.decode(charset, errors="replace")
+                    elif isinstance(payload, str):
+                        text = payload
+                    else:
+                        text = ""
                 except Exception:
                     try:
-                        text = part.get_content()
+                        fallback_payload = part.get_payload()
+                        text = (
+                            fallback_payload
+                            if isinstance(fallback_payload, str)
+                            else ""
+                        )
                     except Exception:
                         text = ""
 
@@ -113,10 +128,16 @@ class TempMailService(BaseEmailService):
             try:
                 payload = message.get_payload(decode=True)
                 charset = message.get_content_charset() or "utf-8"
-                body = payload.decode(charset, errors="replace") if payload else ""
+                if isinstance(payload, bytes):
+                    body = payload.decode(charset, errors="replace")
+                elif isinstance(payload, str):
+                    body = payload
+                else:
+                    body = ""
             except Exception:
                 try:
-                    body = message.get_content()
+                    fallback_payload = message.get_payload()
+                    body = fallback_payload if isinstance(fallback_payload, str) else ""
                 except Exception:
                     body = str(message.get_payload() or "")
 
@@ -149,10 +170,16 @@ class TempMailService(BaseEmailService):
             try:
                 message = message_from_string(raw, policy=email_policy)
                 sender = sender or self._decode_mime_header(message.get("From", ""))
-                subject = subject or self._decode_mime_header(message.get("Subject", ""))
+                subject = subject or self._decode_mime_header(
+                    message.get("Subject", "")
+                )
                 parsed_body = self._extract_body_from_message(message)
                 if parsed_body:
-                    body_text = f"{body_text}\n{parsed_body}".strip() if body_text else parsed_body
+                    body_text = (
+                        f"{body_text}\n{parsed_body}".strip()
+                        if body_text
+                        else parsed_body
+                    )
             except Exception as e:
                 logger.debug(f"解析 TempMail raw 邮件失败: {e}")
                 body_text = f"{body_text}\n{raw}".strip() if body_text else raw
@@ -165,7 +192,9 @@ class TempMailService(BaseEmailService):
             "raw": raw,
         }
 
-    def _is_openai_otp_mail(self, sender: str, subject: str, body: str, raw: str) -> bool:
+    def _is_openai_otp_mail(
+        self, sender: str, subject: str, body: str, raw: str
+    ) -> bool:
         """
         判断是否是 OpenAI 验证码邮件。
         只看 openai 关键字容易误命中营销/通知邮件，这里增加 OTP 语义词过滤。
@@ -193,7 +222,9 @@ class TempMailService(BaseEmailService):
         )
         return any(keyword in blob for keyword in otp_keywords)
 
-    def _extract_otp_code(self, content: str, pattern: str) -> Tuple[Optional[str], bool]:
+    def _extract_otp_code(
+        self, content: str, pattern: str
+    ) -> Tuple[Optional[str], bool]:
         """
         提取验证码并返回是否语义命中。
         优先语义匹配（code is 123456），降低误匹配邮件正文中随机 6 位数字的概率。
@@ -279,7 +310,9 @@ class TempMailService(BaseEmailService):
         ).lower()
         return target in text_blob
 
-    def _fetch_mails_once(self, email: str, jwt: Optional[str], email_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    def _fetch_mails_once(
+        self, email: str, jwt: Optional[str], email_id: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
         """
         获取一次邮件列表，按新旧接口顺序回退:
         1) /api/mails (Bearer jwt)
@@ -289,41 +322,49 @@ class TempMailService(BaseEmailService):
         """
         attempts: List[Dict[str, Any]] = []
         if jwt:
-            attempts.extend([
-                {
-                    "path": "/api/mails",
-                    "params": {"limit": 50, "offset": 0},
-                    "headers": {
-                        "Authorization": f"Bearer {jwt}",
-                        "Accept": "application/json",
+            attempts.extend(
+                [
+                    {
+                        "path": "/api/mails",
+                        "params": {"limit": 50, "offset": 0},
+                        "headers": {
+                            "Authorization": f"Bearer {jwt}",
+                            "Accept": "application/json",
+                        },
                     },
-                },
-                {
-                    "path": "/user_api/mails",
-                    "params": {"limit": 50, "offset": 0},
-                    "headers": {
-                        "x-user-token": jwt,
-                        "Accept": "application/json",
+                    {
+                        "path": "/user_api/mails",
+                        "params": {"limit": 50, "offset": 0},
+                        "headers": {
+                            "x-user-token": jwt,
+                            "Accept": "application/json",
+                        },
                     },
-                },
-            ])
+                ]
+            )
 
-        attempts.append({
-            "path": "/admin/mails",
-            "params": {"limit": 80, "offset": 0, "address": email},
-            "headers": {"Accept": "application/json"},
-        })
-        if email_id and email_id != email:
-            attempts.append({
+        attempts.append(
+            {
                 "path": "/admin/mails",
-                "params": {"limit": 80, "offset": 0, "address": email_id},
+                "params": {"limit": 80, "offset": 0, "address": email},
                 "headers": {"Accept": "application/json"},
-            })
-        attempts.append({
-            "path": "/admin/mails",
-            "params": {"limit": 120, "offset": 0},
-            "headers": {"Accept": "application/json"},
-        })
+            }
+        )
+        if email_id and email_id != email:
+            attempts.append(
+                {
+                    "path": "/admin/mails",
+                    "params": {"limit": 80, "offset": 0, "address": email_id},
+                    "headers": {"Accept": "application/json"},
+                }
+            )
+        attempts.append(
+            {
+                "path": "/admin/mails",
+                "params": {"limit": 120, "offset": 0},
+                "headers": {"Accept": "application/json"},
+            }
+        )
 
         for attempt in attempts:
             path = attempt["path"]
@@ -336,7 +377,11 @@ class TempMailService(BaseEmailService):
                 )
                 mails = self._extract_mails_from_response(response)
                 if mails and "address" not in attempt["params"]:
-                    mails = [mail for mail in mails if self._mail_appears_for_email(mail, email)]
+                    mails = [
+                        mail
+                        for mail in mails
+                        if self._mail_appears_for_email(mail, email)
+                    ]
                 if mails:
                     return mails
                 logger.debug(f"TempMail 接口 {path} 返回无可用邮件列表: {response}")
@@ -345,11 +390,15 @@ class TempMailService(BaseEmailService):
 
         return []
 
-    def _extract_mail_detail_from_response(self, response: Any) -> Optional[Dict[str, Any]]:
+    def _extract_mail_detail_from_response(
+        self, response: Any
+    ) -> Optional[Dict[str, Any]]:
         """从详情接口响应里提取单封邮件对象。"""
         if isinstance(response, dict):
             if response:
-                if all(k in response for k in ("subject", "text")) or response.get("raw"):
+                if all(k in response for k in ("subject", "text")) or response.get(
+                    "raw"
+                ):
                     return response
                 for key in ("mail", "data", "result", "item"):
                     value = response.get(key)
@@ -357,7 +406,9 @@ class TempMailService(BaseEmailService):
                         return value
         return None
 
-    def _fetch_mail_detail(self, mail_id: str, jwt: Optional[str]) -> Optional[Dict[str, Any]]:
+    def _fetch_mail_detail(
+        self, mail_id: str, jwt: Optional[str]
+    ) -> Optional[Dict[str, Any]]:
         """
         尝试获取单封邮件详情（部分部署的列表接口只返回摘要，不含正文）。
         """
@@ -366,22 +417,24 @@ class TempMailService(BaseEmailService):
 
         attempts: List[Dict[str, Any]] = []
         if jwt:
-            attempts.extend([
-                {
-                    "path": f"/api/mails/{mail_id}",
-                    "headers": {
-                        "Authorization": f"Bearer {jwt}",
-                        "Accept": "application/json",
+            attempts.extend(
+                [
+                    {
+                        "path": f"/api/mails/{mail_id}",
+                        "headers": {
+                            "Authorization": f"Bearer {jwt}",
+                            "Accept": "application/json",
+                        },
                     },
-                },
-                {
-                    "path": f"/user_api/mails/{mail_id}",
-                    "headers": {
-                        "x-user-token": jwt,
-                        "Accept": "application/json",
+                    {
+                        "path": f"/user_api/mails/{mail_id}",
+                        "headers": {
+                            "x-user-token": jwt,
+                            "Accept": "application/json",
+                        },
                     },
-                },
-            ])
+                ]
+            )
         attempts.append(
             {
                 "path": f"/admin/mails/{mail_id}",
@@ -391,7 +444,9 @@ class TempMailService(BaseEmailService):
 
         for attempt in attempts:
             try:
-                response = self._make_request("GET", attempt["path"], headers=attempt["headers"])
+                response = self._make_request(
+                    "GET", attempt["path"], headers=attempt["headers"]
+                )
                 detail = self._extract_mail_detail_from_response(response)
                 if detail:
                     return detail
@@ -483,9 +538,19 @@ class TempMailService(BaseEmailService):
 
         fallback = "|".join(
             str(mail.get(key) or "").strip()
-            for key in ("createdAt", "created_at", "date", "source", "from", "subject", "title")
+            for key in (
+                "createdAt",
+                "created_at",
+                "date",
+                "source",
+                "from",
+                "subject",
+                "title",
+            )
         )
-        return fallback or str(hash(json.dumps(mail, sort_keys=True, ensure_ascii=False)))
+        return fallback or str(
+            hash(json.dumps(mail, sort_keys=True, ensure_ascii=False))
+        )
 
     def _make_request(self, method: str, path: str, **kwargs) -> Any:
         """
@@ -534,7 +599,7 @@ class TempMailService(BaseEmailService):
                 raise
             raise EmailServiceError(f"请求失败: {method} {path} - {e}")
 
-    def create_email(self, config: Dict[str, Any] = None) -> Dict[str, Any]:
+    def create_email(self, config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         通过 admin API 创建临时邮箱
 
@@ -548,9 +613,9 @@ class TempMailService(BaseEmailService):
         import string
 
         # 生成随机邮箱名
-        letters = ''.join(random.choices(string.ascii_lowercase, k=5))
-        digits = ''.join(random.choices(string.digits, k=random.randint(1, 3)))
-        suffix = ''.join(random.choices(string.ascii_lowercase, k=random.randint(1, 3)))
+        letters = "".join(random.choices(string.ascii_lowercase, k=5))
+        digits = "".join(random.choices(string.digits, k=random.randint(1, 3)))
+        suffix = "".join(random.choices(string.ascii_lowercase, k=random.randint(1, 3)))
         name = letters + digits + suffix
 
         domain = self.config["domain"]
@@ -602,7 +667,7 @@ class TempMailService(BaseEmailService):
     def get_verification_code(
         self,
         email: str,
-        email_id: str = None,
+        email_id: Optional[str] = None,
         timeout: int = 120,
         pattern: str = OTP_CODE_PATTERN,
         otp_sent_at: Optional[float] = None,
@@ -640,7 +705,9 @@ class TempMailService(BaseEmailService):
         while time.time() - start_time < timeout:
             poll_count += 1
             try:
-                mails = self._fetch_mails_once(email=email, jwt=jwt, email_id=address_id)
+                mails = self._fetch_mails_once(
+                    email=email, jwt=jwt, email_id=address_id
+                )
                 if not mails:
                     if poll_count == 1 or poll_count % 5 == 0:
                         logger.info(
@@ -681,7 +748,9 @@ class TempMailService(BaseEmailService):
                     content = f"{sender}\n{subject}\n{body_text}\n{raw_text}".strip()
 
                     # 只处理 OpenAI 验证码类邮件（避免误命中通知类邮件）
-                    if not self._is_openai_otp_mail(sender, subject, body_text, raw_text):
+                    if not self._is_openai_otp_mail(
+                        sender, subject, body_text, raw_text
+                    ):
                         continue
 
                     code, semantic_hit = self._extract_otp_code(content, pattern)
@@ -706,7 +775,9 @@ class TempMailService(BaseEmailService):
                                 detail_parsed["raw"],
                             ):
                                 continue
-                            code, semantic_hit = self._extract_otp_code(detail_content, pattern)
+                            code, semantic_hit = self._extract_otp_code(
+                                detail_content, pattern
+                            )
 
                     if not code:
                         continue
@@ -717,7 +788,9 @@ class TempMailService(BaseEmailService):
                         "mail_ts": mail_ts,
                         "semantic_hit": bool(semantic_hit),
                         "is_recent": bool(
-                            otp_sent_at and (mail_ts is not None) and (mail_ts + 2 >= otp_sent_at)
+                            otp_sent_at
+                            and (mail_ts is not None)
+                            and (mail_ts + 2 >= otp_sent_at)
                         ),
                     }
                     if otp_sent_at and mail_ts is None:
@@ -726,7 +799,12 @@ class TempMailService(BaseEmailService):
                         candidates.append(candidate)
 
                 elapsed = time.time() - start_time
-                if otp_sent_at and (not candidates) and unknown_ts_candidates and elapsed < unknown_ts_grace_seconds:
+                if (
+                    otp_sent_at
+                    and (not candidates)
+                    and unknown_ts_candidates
+                    and elapsed < unknown_ts_grace_seconds
+                ):
                     # 先等一小段时间，优先等待可解析时间戳的新邮件，避免立刻捞到历史旧码。
                     logger.debug(
                         "TempMail 轮询[%s]: 存在无时间戳邮件，等待 %.0fs 后再回退使用",
@@ -749,7 +827,9 @@ class TempMailService(BaseEmailService):
                         reverse=True,
                     )[0]
                     code = str(best["code"])
-                    if OTP_DOMAIN_PATTERN.search(str(best.get("detail_content") or "")) and code in str(best.get("detail_content") or ""):
+                    if OTP_DOMAIN_PATTERN.search(
+                        str(best.get("detail_content") or "")
+                    ) and code in str(best.get("detail_content") or ""):
                         logger.debug("??????????????????? OTP")
                         time.sleep(3)
                         continue
@@ -773,7 +853,9 @@ class TempMailService(BaseEmailService):
         logger.warning(f"等待 TempMail 验证码超时: {email}")
         return None
 
-    def list_emails(self, limit: int = 100, offset: int = 0, **kwargs) -> List[Dict[str, Any]]:
+    def list_emails(
+        self, limit: int = 100, offset: int = 0, **kwargs
+    ) -> List[Dict[str, Any]]:
         """
         列出邮箱
 

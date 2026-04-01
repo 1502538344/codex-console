@@ -10,7 +10,12 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 
-def fetch_dynamic_proxy(api_url: str, api_key: str = "", api_key_header: str = "X-API-Key", result_field: str = "") -> Optional[str]:
+def fetch_dynamic_proxy(
+    api_url: str,
+    api_key: str = "",
+    api_key_header: str = "X-API-Key",
+    result_field: str = "",
+) -> Optional[str]:
     """
     从代理 API 获取代理 URL
 
@@ -31,10 +36,7 @@ def fetch_dynamic_proxy(api_url: str, api_key: str = "", api_key_header: str = "
             headers[api_key_header] = api_key
 
         response = cffi_requests.get(
-            api_url,
-            headers=headers,
-            timeout=10,
-            impersonate="chrome110"
+            api_url, headers=headers, timeout=10, impersonate="chrome110"
         )
 
         if response.status_code != 200:
@@ -47,6 +49,7 @@ def fetch_dynamic_proxy(api_url: str, api_key: str = "", api_key_header: str = "
         if result_field or text.startswith("{") or text.startswith("["):
             try:
                 import json
+
                 data = json.loads(text)
                 if result_field:
                     # 按点号路径逐层提取
@@ -79,10 +82,14 @@ def fetch_dynamic_proxy(api_url: str, api_key: str = "", api_key_header: str = "
             return None
 
         # 若未包含协议头，默认加 http://
-        if not re.match(r'^(http|socks5)://', proxy_url):
+        if not re.match(r"^(http|socks5)://", proxy_url):
             proxy_url = "http://" + proxy_url
 
-        logger.info(f"动态代理获取成功: {proxy_url[:40]}..." if len(proxy_url) > 40 else f"动态代理获取成功: {proxy_url}")
+        logger.info(
+            f"动态代理获取成功: {proxy_url[:40]}..."
+            if len(proxy_url) > 40
+            else f"动态代理获取成功: {proxy_url}"
+        )
         return proxy_url
 
     except Exception as e:
@@ -99,11 +106,16 @@ def get_proxy_url_for_task() -> Optional[str]:
         代理 URL 或 None
     """
     from ..config.settings import get_settings
+
     settings = get_settings()
 
     # 优先使用动态代理
     if settings.proxy_dynamic_enabled and settings.proxy_dynamic_api_url:
-        api_key = settings.proxy_dynamic_api_key.get_secret_value() if settings.proxy_dynamic_api_key else ""
+        api_key = (
+            settings.proxy_dynamic_api_key.get_secret_value()
+            if settings.proxy_dynamic_api_key
+            else ""
+        )
         proxy_url = fetch_dynamic_proxy(
             api_url=settings.proxy_dynamic_api_url,
             api_key=api_key,

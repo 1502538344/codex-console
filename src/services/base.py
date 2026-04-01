@@ -16,11 +16,13 @@ logger = logging.getLogger(__name__)
 
 class EmailServiceError(Exception):
     """邮箱服务异常"""
+
     pass
 
 
 class EmailServiceStatus(Enum):
     """邮箱服务状态"""
+
     HEALTHY = "healthy"
     DEGRADED = "degraded"
     UNAVAILABLE = "unavailable"
@@ -33,7 +35,7 @@ class BaseEmailService(abc.ABC):
     所有邮箱服务必须实现此接口
     """
 
-    def __init__(self, service_type: EmailServiceType, name: str = None):
+    def __init__(self, service_type: EmailServiceType, name: Optional[str] = None):
         """
         初始化邮箱服务
 
@@ -57,7 +59,7 @@ class BaseEmailService(abc.ABC):
         return self._last_error
 
     @abc.abstractmethod
-    def create_email(self, config: Dict[str, Any] = None) -> Dict[str, Any]:
+    def create_email(self, config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         创建新邮箱地址
 
@@ -79,7 +81,7 @@ class BaseEmailService(abc.ABC):
     def get_verification_code(
         self,
         email: str,
-        email_id: str = None,
+        email_id: Optional[str] = None,
         timeout: int = 120,
         pattern: str = r"(?<!\d)(\d{6})(?!\d)",
         otp_sent_at: Optional[float] = None,
@@ -166,11 +168,11 @@ class BaseEmailService(abc.ABC):
     def wait_for_email(
         self,
         email: str,
-        email_id: str = None,
+        email_id: Optional[str] = None,
         timeout: int = 120,
         check_interval: int = 3,
-        expected_sender: str = None,
-        expected_subject: str = None
+        expected_sender: Optional[str] = None,
+        expected_subject: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """
         等待并获取邮件（可选实现）
@@ -208,14 +210,20 @@ class BaseEmailService(abc.ABC):
                         continue
 
                     # 获取邮件列表
-                    messages = self.get_email_messages(email_id or current_email_id)
+                    messages = self.get_email_messages(
+                        str(email_id or current_email_id or "")
+                    )
                     for message in messages:
                         # 检查发件人
-                        if expected_sender and expected_sender not in message.get("from", ""):
+                        if expected_sender and expected_sender not in message.get(
+                            "from", ""
+                        ):
                             continue
 
                         # 检查主题
-                        if expected_subject and expected_subject not in message.get("subject", ""):
+                        if expected_subject and expected_subject not in message.get(
+                            "subject", ""
+                        ):
                             continue
 
                         # 返回邮件信息
@@ -225,7 +233,7 @@ class BaseEmailService(abc.ABC):
                             "subject": message.get("subject"),
                             "content": message.get("content"),
                             "received_at": message.get("received_at"),
-                            "email_info": email_info
+                            "email_info": email_info,
                         }
 
                     # 更新最后检查的邮件 ID
@@ -239,7 +247,9 @@ class BaseEmailService(abc.ABC):
 
         return None
 
-    def get_email_messages(self, email_id: str, **kwargs) -> List[Dict[str, Any]]:
+    def get_email_messages(
+        self, email_id: Optional[str], **kwargs
+    ) -> List[Dict[str, Any]]:
         """
         获取邮箱中的邮件列表（可选实现）
 
@@ -255,7 +265,9 @@ class BaseEmailService(abc.ABC):
         """
         raise NotImplementedError("此邮箱服务不支持获取邮件列表")
 
-    def get_message_content(self, email_id: str, message_id: str) -> Optional[Dict[str, Any]]:
+    def get_message_content(
+        self, email_id: Optional[str], message_id: Optional[str]
+    ) -> Optional[Dict[str, Any]]:
         """
         获取邮件内容（可选实现）
 
@@ -271,7 +283,7 @@ class BaseEmailService(abc.ABC):
         """
         raise NotImplementedError("此邮箱服务不支持获取邮件内容")
 
-    def update_status(self, success: bool, error: Exception = None):
+    def update_status(self, success: bool, error: Optional[Exception] = None):
         """
         更新服务状态
 
@@ -316,7 +328,7 @@ class EmailServiceFactory:
         cls,
         service_type: EmailServiceType,
         config: Dict[str, Any],
-        name: str = None
+        name: Optional[str] = None,
     ) -> BaseEmailService:
         """
         创建邮箱服务实例
@@ -370,7 +382,7 @@ class EmailServiceFactory:
 def create_email_service(
     service_type: EmailServiceType,
     config: Dict[str, Any],
-    name: str = None
+    name: Optional[str] = None,
 ) -> BaseEmailService:
     """
     创建邮箱服务（简化工厂函数）

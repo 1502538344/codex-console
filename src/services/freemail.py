@@ -23,7 +23,9 @@ class FreemailService(BaseEmailService):
     基于自部署 Cloudflare Worker 的临时邮箱
     """
 
-    def __init__(self, config: Dict[str, Any] = None, name: str = None):
+    def __init__(
+        self, config: Optional[Dict[str, Any]] = None, name: Optional[str] = None
+    ):
         """
         初始化 Freemail 服务
 
@@ -54,7 +56,10 @@ class FreemailService(BaseEmailService):
             timeout=self.config["timeout"],
             max_retries=self.config["max_retries"],
         )
-        self.http_client = HTTPClient(proxy_url=None, config=http_config)
+        self.http_client = HTTPClient(
+            proxy_url=self.config.get("proxy_url"),
+            config=http_config,
+        )
 
         # 缓存 domain 列表
         self._domains = []
@@ -120,7 +125,7 @@ class FreemailService(BaseEmailService):
             except Exception as e:
                 logger.warning(f"获取 Freemail 域名列表失败: {e}")
 
-    def create_email(self, config: Dict[str, Any] = None) -> Dict[str, Any]:
+    def create_email(self, config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         通过 API 创建临时邮箱
 
@@ -130,24 +135,21 @@ class FreemailService(BaseEmailService):
             - service_id: 同 email（用作标识）
         """
         self._ensure_domains()
-        
+
         req_config = config or {}
         domain_index = 0
         target_domain = req_config.get("domain") or self.config.get("domain")
-        
+
         if target_domain and self._domains:
             for i, d in enumerate(self._domains):
                 if d == target_domain:
                     domain_index = i
                     break
-                    
+
         prefix = req_config.get("name")
         try:
             if prefix:
-                body = {
-                    "local": prefix,
-                    "domainIndex": domain_index
-                }
+                body = {"local": prefix, "domainIndex": domain_index}
                 resp = self._make_request("POST", "/api/create", json=body)
             else:
                 params = {"domainIndex": domain_index}
@@ -180,7 +182,7 @@ class FreemailService(BaseEmailService):
     def get_verification_code(
         self,
         email: str,
-        email_id: str = None,
+        email_id: Optional[str] = None,
         timeout: int = 120,
         pattern: str = OTP_CODE_PATTERN,
         otp_sent_at: Optional[float] = None,
@@ -205,7 +207,9 @@ class FreemailService(BaseEmailService):
 
         while time.time() - start_time < timeout:
             try:
-                mails = self._make_request("GET", "/api/emails", params={"mailbox": email, "limit": 20})
+                mails = self._make_request(
+                    "GET", "/api/emails", params={"mailbox": email, "limit": 20}
+                )
                 if not isinstance(mails, list):
                     time.sleep(3)
                     continue
@@ -220,9 +224,9 @@ class FreemailService(BaseEmailService):
                     sender = str(mail.get("sender", "")).lower()
                     subject = str(mail.get("subject", ""))
                     preview = str(mail.get("preview", ""))
-                    
+
                     content = f"{sender}\n{subject}\n{preview}"
-                    
+
                     if "openai" not in content.lower():
                         continue
 
@@ -244,7 +248,11 @@ class FreemailService(BaseEmailService):
                     # 如果依然未找到，获取邮件详情进行匹配
                     try:
                         detail = self._make_request("GET", f"/api/email/{mail_id}")
-                        full_content = str(detail.get("content", "")) + "\n" + str(detail.get("html_content", ""))
+                        full_content = (
+                            str(detail.get("content", ""))
+                            + "\n"
+                            + str(detail.get("html_content", ""))
+                        )
                         match = re.search(pattern, full_content)
                         if match:
                             code = match.group(1)
@@ -275,22 +283,24 @@ class FreemailService(BaseEmailService):
         try:
             params = {
                 "limit": kwargs.get("limit", 100),
-                "offset": kwargs.get("offset", 0)
+                "offset": kwargs.get("offset", 0),
             }
             resp = self._make_request("GET", "/api/mailboxes", params=params)
-            
+
             emails = []
             if isinstance(resp, list):
                 for mail in resp:
                     address = mail.get("address")
                     if address:
-                        emails.append({
-                            "id": address,
-                            "service_id": address,
-                            "email": address,
-                            "created_at": mail.get("created_at"),
-                            "raw_data": mail
-                        })
+                        emails.append(
+                            {
+                                "id": address,
+                                "service_id": address,
+                                "email": address,
+                                "created_at": mail.get("created_at"),
+                                "raw_data": mail,
+                            }
+                        )
             self.update_status(True)
             return emails
         except Exception as e:
