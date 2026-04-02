@@ -32,23 +32,6 @@
 
 - [https://blog.cysq8.cn/](https://blog.cysq8.cn/)
 
-## 赞助支持
-
-如果这个项目对你有帮助，欢迎赞助支持项目继续维护与更新。
-
-<table>
-  <tr>
-    <td align="center">
-      <strong>微信赞助</strong><br />
-      <img src="docs/assets/wechat-pay.png" alt="微信赞助二维码" width="260" />
-    </td>
-    <td align="center">
-      <strong>支付宝赞助</strong><br />
-      <img src="docs/assets/alipay-pay.png" alt="支付宝赞助二维码" width="260" />
-    </td>
-  </tr>
-</table>
-
 ## 致谢
 
 首先感谢上游项目作者 [cnlimiter](https://github.com/cnlimiter) 提供的优秀基础工程。
@@ -122,7 +105,7 @@
 
 14. 批量注册上限由 `100` 提升至 `1000`，前后端同步。
 
-15. 公告区改为固定文案与固定链接，强化“永久免费开源、禁止倒卖、付费请退款”提示，并新增爱发电支持入口。
+15. 公告区改为固定文案与固定链接，强化“永久免费开源、禁止倒卖、付费请退款”提示。
 
 ### v1.1.2
 
@@ -176,6 +159,48 @@
 
 17. 修复自动一键刷新、公告样式与页面外链。  
     修复定时自动一键刷新不可用、公告按钮样式问题、Footer 外链和 Blog 跳转问题。
+
+### 最新维护更新（README 同步）
+
+以下内容为当前仓库在 `v1.1.2` 之后的持续维护更新，便于快速了解最近修复方向：
+
+1. 新增运行时系统代理兜底。  
+   当数据库未显式配置代理时，核心业务请求现在会自动回退使用操作系统代理设置，减少部署后“工具能联网、应用本体却不走代理”的割裂情况。
+
+2. 修复注册任务参数传递问题。  
+   修正 Outlook 批量注册链路中 `registration_type` 参数透传不完整导致的 ASGI 运行时报错。
+
+3. 增强注册主链路对 `add-phone` 的处理。  
+   `src/core/register.py` 现在不再把 `add-phone` 单纯当作“跟随重定向失败”，而是会在当前会话里继续推进手机号验证、consent、workspace 与 code 收尾流程。
+
+4. 新增 Hero SMS 服务接入。  
+   增加 `src/services/hero_sms.py`，支持余额查询、取号、查短信状态、完成/取消激活等基础能力，并接入到 OpenAI `add-phone` 自动化流程中。
+
+5. 新增 Hero SMS 后端配置与测试接口。  
+   增加 Hero SMS 配置项、`/settings/hero-sms`、`/settings/hero-sms/test`、`/settings/hero-sms/test-services` 等接口，可直接在后端保存配置并测试余额与服务列表。
+
+6. 新增 WebUI Hero SMS 配置区。  
+   设置页现在可直接填写 Hero SMS 开关、API Key、Base URL、服务代号、国家数字 ID、轮询间隔、等待超时，并支持“测试配置”“测试服务列表”等操作。
+
+7. 修复 Hero SMS 响应解析兼容问题。  
+   补齐对 `{"status":"success"}` 等 JSON 成功响应的识别，避免服务列表等接口成功返回后被错误判定为失败。
+
+8. 收紧 Hero SMS 国家参数校验。  
+   统一要求使用国家数字 ID，而不是 `US` 这类国家代码；前端文案、后端校验和服务层归一化逻辑已同步更新。
+
+9. 调整手机号验证码等待与换号策略。  
+   首次等待短信的冷却窗口统一提升到 `125` 秒，避免过早触发 OpenAI 风控；若超时或命中风控，则按冷却约束换号重试。
+
+10. 拆分手机号阶段重试预算。  
+    取号失败（如 `NO_NUMBERS`）与“已发送号码后等待短信/换号失败”现在分别计数，避免库存问题提前耗尽真正的号码重试机会；当前默认预算已调整为 3 次。
+
+### Hero SMS 配置与接口指引
+
+- Hero SMS 官方 API 文档：
+  [https://hero-sms.com/api#tag/sms-activate/GET?action=getNumber](https://hero-sms.com/api#tag/sms-activate/GET?action=getNumber)
+- 当前项目接入 Hero SMS 时，建议优先查阅 `getNumber`、`getStatus`、`setStatus`、`getServicesList` 等接口说明。
+- 推荐配置：服务代号填写 `dr`，国家/地区建议填写 `6`（Indonesia）。
+- `country` 参数请使用 **国家数字 ID**，不要填写 `US` 这类国家代码。
 
 ## 核心能力
 
