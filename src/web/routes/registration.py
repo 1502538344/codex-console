@@ -20,7 +20,11 @@ from ...config.constants import (
 from ...database import crud
 from ...database.session import get_db
 from ...database.models import RegistrationTask, ScheduledRegistrationJob, Proxy
-from ...core.register import RegistrationEngine, RegistrationResult
+from ...core.register import (
+    RegistrationEngine,
+    RegistrationResult,
+    RegistrationCancelledError,
+)
 from ...services import EmailServiceFactory, EmailServiceType
 from ...config.settings import get_settings, Settings
 from ...core.auto_registration import (
@@ -396,11 +400,31 @@ def _run_sync_registration_task(
     这个函数会被 run_in_executor 调用，运行在独立线程中
     """
     with get_db() as db:
-        try:
-            # 检查是否已取消
+
+        def _mark_cancelled(reason: str = "任务已取消") -> None:
+            safe_reason = str(reason or "任务已取消").strip()
+            crud.update_registration_task(
+                db,
+                task_uuid,
+                status="cancelled",
+                completed_at=utcnow_naive(),
+                error_message=safe_reason,
+            )
+            task_manager.update_status(task_uuid, "cancelled", error=safe_reason)
+            task_manager.add_log(
+                task_uuid,
+                f"{log_prefix} [取消] {safe_reason}"
+                if log_prefix
+                else f"[取消] {safe_reason}",
+            )
+            logger.info("任务 %s 已取消: %s", task_uuid, safe_reason)
+
+        def _raise_if_cancelled(reason: str = "任务已取消") -> None:
             if task_manager.is_cancelled(task_uuid):
-                logger.info(f"任务 {task_uuid} 已取消，跳过执行")
-                return
+                raise RegistrationCancelledError(reason)
+
+        try:
+            _raise_if_cancelled("任务在入队后收到取消请求，已跳过执行")
 
             # 更新任务状态为运行中
             task = crud.update_registration_task(
@@ -413,6 +437,7 @@ def _run_sync_registration_task(
 
             # 更新 TaskManager 状态
             task_manager.update_status(task_uuid, "running")
+            _raise_if_cancelled("任务在启动后收到取消请求，停止执行")
 
             # 确定使用的代理
             # 如果前端传入了代理参数，使用传入的
@@ -429,6 +454,7 @@ def _run_sync_registration_task(
 
             # 更新任务的代理记录
             crud.update_registration_task(db, task_uuid, proxy=actual_proxy_url)
+            _raise_if_cancelled("任务在准备阶段收到取消请求，停止执行")
 
             # 创建邮箱服务
             service_type = EmailServiceType(email_service_type)
@@ -768,12 +794,14 @@ def _run_sync_registration_task(
                 proxy_url=actual_proxy_url,
                 callback_logger=log_callback,
                 task_uuid=task_uuid,
+                check_cancelled=task_manager.create_check_cancelled_callback(task_uuid),
             )
 
             # 执行注册
             role_tag = normalize_role_tag(registration_type)
             account_label = role_tag_to_account_label(role_tag)
             result = engine.run()
+            _raise_if_cancelled("任务在注册流程中收到取消请求，停止后续处理")
             marker = getattr(email_service, "mark_registration_outcome", None)
             marker_context = {}
             try:
@@ -786,6 +814,7 @@ def _run_sync_registration_task(
                 marker_context = {}
 
             if result.success:
+                _raise_if_cancelled("任务在注册成功后收到取消请求，跳过后处理")
                 # 更新代理使用时间
                 update_proxy_usage(db, proxy_id)
 
@@ -796,6 +825,7 @@ def _run_sync_registration_task(
                 result.metadata = metadata
 
                 # 保存到数据库
+                _raise_if_cancelled("任务在保存账户前收到取消请求，停止后处理")
                 engine.save_to_database(
                     result, account_label=account_label, role_tag=role_tag
                 )
@@ -812,6 +842,7 @@ def _run_sync_registration_task(
 
                 # 自动上传到 CPA（可多服务）
                 if auto_upload_cpa:
+                    _raise_if_cancelled("任务在 CPA 上传前收到取消请求，停止后处理")
                     try:
                         from ...core.upload.cpa_upload import (
                             upload_to_cpa,
@@ -834,6 +865,7 @@ def _run_sync_registration_task(
                             if not _cpa_ids:
                                 log_callback("[CPA] 无可用 CPA 服务，跳过上传")
                             for _sid in _cpa_ids:
+                                _raise_if_cancelled("任务在 CPA 上传过程中收到取消请求")
                                 try:
                                     _svc = crud.get_cpa_service_by_id(db, _sid)
                                     if not _svc:
@@ -864,6 +896,7 @@ def _run_sync_registration_task(
 
                 # 自动上传到 Sub2API（可多服务）
                 if auto_upload_sub2api:
+                    _raise_if_cancelled("任务在 Sub2API 上传前收到取消请求，停止后处理")
                     try:
                         from ...core.upload.sub2api_upload import upload_to_sub2api
                         from ...database.models import Account as AccountModel
@@ -881,6 +914,9 @@ def _run_sync_registration_task(
                             if not _s2a_ids:
                                 log_callback("[Sub2API] 无可用 Sub2API 服务，跳过上传")
                             for _sid in _s2a_ids:
+                                _raise_if_cancelled(
+                                    "任务在 Sub2API 上传过程中收到取消请求"
+                                )
                                 try:
                                     _svc = crud.get_sub2api_service_by_id(db, _sid)
                                     if not _svc:
@@ -901,6 +937,9 @@ def _run_sync_registration_task(
 
                 # 自动上传到 Team Manager（可多服务）
                 if auto_upload_tm:
+                    _raise_if_cancelled(
+                        "任务在 Team Manager 上传前收到取消请求，停止后处理"
+                    )
                     try:
                         from ...core.upload.team_manager_upload import (
                             upload_to_team_manager,
@@ -919,6 +958,9 @@ def _run_sync_registration_task(
                             if not _tm_ids:
                                 log_callback("[TM] 无可用 Team Manager 服务，跳过上传")
                             for _sid in _tm_ids:
+                                _raise_if_cancelled(
+                                    "任务在 Team Manager 上传过程中收到取消请求"
+                                )
                                 try:
                                     _svc = crud.get_tm_service_by_id(db, _sid)
                                     if not _svc:
@@ -938,6 +980,7 @@ def _run_sync_registration_task(
                         log_callback(f"[TM] 上传异常: {tm_err}")
 
                 if auto_upload_new_api:
+                    _raise_if_cancelled("任务在 NewAPI 上传前收到取消请求，停止后处理")
                     try:
                         from ...core.upload.new_api_upload import upload_to_new_api
                         from ...database.models import Account as AccountModel
@@ -955,6 +998,9 @@ def _run_sync_registration_task(
                             if not _new_api_ids:
                                 log_callback("[NewAPI] 无可用 new-api 服务，跳过上传")
                             for _sid in _new_api_ids:
+                                _raise_if_cancelled(
+                                    "任务在 NewAPI 上传过程中收到取消请求"
+                                )
                                 try:
                                     _svc = crud.get_new_api_service_by_id(db, _sid)
                                     if not _svc:
@@ -977,6 +1023,7 @@ def _run_sync_registration_task(
                         log_callback(f"[NewAPI] 上传异常: {new_api_err}")
 
                 # 更新任务状态
+                _raise_if_cancelled("任务在收尾前收到取消请求，停止标记成功")
                 crud.update_registration_task(
                     db,
                     task_uuid,
@@ -990,6 +1037,9 @@ def _run_sync_registration_task(
 
                 logger.info(f"注册任务完成: {task_uuid}, 邮箱: {result.email}")
             else:
+                if task_manager.is_cancelled(task_uuid):
+                    _mark_cancelled("任务在注册失败分支检测到取消请求")
+                    return
                 if callable(marker) and result.email:
                     try:
                         marker(
@@ -1019,6 +1069,8 @@ def _run_sync_registration_task(
                     f"注册任务失败: {task_uuid}, 原因: {result.error_message}"
                 )
 
+        except RegistrationCancelledError as cancelled:
+            _mark_cancelled(str(cancelled) or "任务已取消")
         except Exception as e:
             logger.error(f"注册任务异常: {task_uuid}, 错误: {e}")
 
@@ -1167,6 +1219,21 @@ async def run_batch_parallel(
     async def _run_one(idx: int, uuid: str):
         prefix = f"[任务{idx + 1}]"
         async with semaphore:
+            if (
+                task_manager.is_batch_cancelled(batch_id)
+                or batch_tasks[batch_id]["cancelled"]
+            ):
+                with get_db() as db:
+                    crud.update_registration_task(
+                        db,
+                        uuid,
+                        status="cancelled",
+                        completed_at=utcnow_naive(),
+                        error_message="批量任务已取消",
+                    )
+                task_manager.cancel_task(uuid)
+                task_manager.update_status(uuid, "cancelled", error="批量任务已取消")
+                return
             await run_registration_task(
                 uuid,
                 email_service_type,
@@ -1255,6 +1322,21 @@ async def run_batch_pipeline(
 
     async def _run_and_release(idx: int, uuid: str, pfx: str):
         try:
+            if (
+                task_manager.is_batch_cancelled(batch_id)
+                or batch_tasks[batch_id]["cancelled"]
+            ):
+                with get_db() as db:
+                    crud.update_registration_task(
+                        db,
+                        uuid,
+                        status="cancelled",
+                        completed_at=utcnow_naive(),
+                        error_message="批量任务已取消",
+                    )
+                task_manager.cancel_task(uuid)
+                task_manager.update_status(uuid, "cancelled", error="批量任务已取消")
+                return
             await run_registration_task(
                 uuid,
                 email_service_type,
@@ -1978,7 +2060,18 @@ async def cancel_task(task_uuid: str):
         if task.status not in ["pending", "running"]:
             raise HTTPException(status_code=400, detail="任务已完成或已取消")
 
-        task = crud.update_registration_task(db, task_uuid, status="cancelled")
+        task_manager.cancel_task(task_uuid)
+        task = crud.update_registration_task(
+            db,
+            task_uuid,
+            status="cancelled",
+            completed_at=utcnow_naive(),
+            error_message="任务取消请求已提交",
+        )
+        task_manager.update_status(task_uuid, "cancelled", error="任务取消请求已提交")
+        task_manager.add_log(
+            task_uuid, "[取消] 任务取消请求已提交，等待后台线程有序退出"
+        )
 
         return {"success": True, "message": "任务已取消"}
 
@@ -2538,6 +2631,7 @@ async def cancel_outlook_batch(batch_id: str):
     # 同时更新两个系统的取消状态
     batch["cancelled"] = True
     task_manager.cancel_batch(batch_id)
+    _cancel_batch_tasks(batch_id)
 
     return {"success": True, "message": "批量任务取消请求已提交，正在让它们有序收工"}
 
