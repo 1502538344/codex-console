@@ -8,35 +8,15 @@
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![Version](https://img.shields.io/badge/version-v1.1.2-2563eb.svg)](https://github.com/dou-jiang/codex-console/releases/tag/v1.1.2)
 
-## 项目地址
+## 原项目地址
 
 - GitHub Repo: [https://github.com/dou-jiang/codex-console](https://github.com/dou-jiang/codex-console)
-- Blog: [https://blog.cysq8.cn/](https://blog.cysq8.cn/)
-
-## QQ群
-
-- 交流群: [291638849（点击加群）](https://qm.qq.com/q/4TETC3mWco)
-- Telegram 频道: [codex_console](https://t.me/codex_console)
-
-## Blog 说明
-
-我会在 Blog 持续更新这些内容：
-
-- 部署教程和环境配置说明
-- 每个版本的更新日志和 Release 说明
-- 常见报错、排查思路和修复记录
-- 邮箱服务、上传服务、任务调度、自检功能等使用说明
-- 上游变化后的兼容性调整说明
-
-访问地址：
-
-- [https://blog.cysq8.cn/](https://blog.cysq8.cn/)
 
 ## 致谢
 
 首先感谢上游项目作者 [cnlimiter](https://github.com/cnlimiter) 提供的优秀基础工程。
 
-本仓库是在原项目思路和结构之上进行兼容性修复、流程调整和体验优化，适合作为一个“当前可用的修复维护版”继续使用。
+本仓库是在原项目上新增了一些功能
 
 ## 版本更新
 
