@@ -24,6 +24,7 @@ class SettingCategory(str, Enum):
     PROXY = "proxy"
     REGISTRATION = "registration"
     EMAIL = "email"
+    SMS = "sms"
     TEMPMAIL = "tempmail"
     CUSTOM_DOMAIN = "moe_mail"
     SECURITY = "security"
@@ -100,61 +101,61 @@ SETTING_DEFINITIONS: Dict[str, SettingDefinition] = {
         db_key="webui.auto_quick_refresh.enabled",
         default_value=False,
         category=SettingCategory.WEBUI,
-        description="是否启用账号管理自动一键刷新"
+        description="是否启用账号管理自动一键刷新",
     ),
     "auto_quick_refresh_interval_minutes": SettingDefinition(
         db_key="webui.auto_quick_refresh.interval_minutes",
         default_value=30,
         category=SettingCategory.WEBUI,
-        description="账号管理自动一键刷新间隔（分钟）"
+        description="账号管理自动一键刷新间隔（分钟）",
     ),
     "auto_quick_refresh_retry_limit": SettingDefinition(
         db_key="webui.auto_quick_refresh.retry_limit",
         default_value=2,
         category=SettingCategory.WEBUI,
-        description="账号管理自动一键刷新失败重试次数"
+        description="账号管理自动一键刷新失败重试次数",
     ),
     "selfcheck_auto_enabled": SettingDefinition(
         db_key="webui.selfcheck.auto_enabled",
         default_value=False,
         category=SettingCategory.WEBUI,
-        description="是否启用系统自检定时巡检"
+        description="是否启用系统自检定时巡检",
     ),
     "selfcheck_interval_minutes": SettingDefinition(
         db_key="webui.selfcheck.interval_minutes",
         default_value=15,
         category=SettingCategory.WEBUI,
-        description="系统自检定时巡检间隔（分钟）"
+        description="系统自检定时巡检间隔（分钟）",
     ),
     "selfcheck_mode": SettingDefinition(
         db_key="webui.selfcheck.mode",
         default_value="quick",
         category=SettingCategory.WEBUI,
-        description="系统自检定时巡检模式（quick/full）"
+        description="系统自检定时巡检模式（quick/full）",
     ),
     "circuit_breaker_enabled": SettingDefinition(
         db_key="runtime.circuit_breaker.enabled",
         default_value=True,
         category=SettingCategory.WEBUI,
-        description="是否启用失败熔断器"
+        description="是否启用失败熔断器",
     ),
     "circuit_breaker_failure_threshold": SettingDefinition(
         db_key="runtime.circuit_breaker.failure_threshold",
         default_value=5,
         category=SettingCategory.WEBUI,
-        description="熔断触发连续失败次数阈值"
+        description="熔断触发连续失败次数阈值",
     ),
     "circuit_breaker_cooldown_seconds": SettingDefinition(
         db_key="runtime.circuit_breaker.cooldown_seconds",
         default_value=180,
         category=SettingCategory.WEBUI,
-        description="熔断冷却时长（秒）"
+        description="熔断冷却时长（秒）",
     ),
     "circuit_breaker_probe_interval_seconds": SettingDefinition(
         db_key="runtime.circuit_breaker.probe_interval_seconds",
         default_value=30,
         category=SettingCategory.WEBUI,
-        description="冷却结束后自动探活最小间隔（秒）"
+        description="冷却结束后自动探活最小间隔（秒）",
     ),
     # 日志配置
     "log_level": SettingDefinition(
@@ -317,67 +318,67 @@ SETTING_DEFINITIONS: Dict[str, SettingDefinition] = {
         db_key="registration.auto.enabled",
         default_value=False,
         category=SettingCategory.REGISTRATION,
-        description="是否启用自动注册补货"
+        description="是否启用自动注册补货",
     ),
     "registration_auto_check_interval": SettingDefinition(
         db_key="registration.auto.check_interval",
         default_value=60,
         category=SettingCategory.REGISTRATION,
-        description="自动注册库存检查间隔（秒）"
+        description="自动注册库存检查间隔（秒）",
     ),
     "registration_auto_min_ready_auth_files": SettingDefinition(
         db_key="registration.auto.min_ready_auth_files",
         default_value=1,
         category=SettingCategory.REGISTRATION,
-        description="自动注册保底可用认证文件数量"
+        description="自动注册保底可用认证文件数量",
     ),
     "registration_auto_email_service_type": SettingDefinition(
         db_key="registration.auto.email_service_type",
         default_value="tempmail",
         category=SettingCategory.REGISTRATION,
-        description="自动注册使用的邮箱服务类型"
+        description="自动注册使用的邮箱服务类型",
     ),
     "registration_auto_email_service_id": SettingDefinition(
         db_key="registration.auto.email_service_id",
         default_value=0,
         category=SettingCategory.REGISTRATION,
-        description="自动注册绑定的邮箱服务 ID（0 表示自动选择）"
+        description="自动注册绑定的邮箱服务 ID（0 表示自动选择）",
     ),
     "registration_auto_proxy": SettingDefinition(
         db_key="registration.auto.proxy",
         default_value="",
         category=SettingCategory.REGISTRATION,
-        description="自动注册固定代理地址（留空则沿用系统策略）"
+        description="自动注册固定代理地址（留空则沿用系统策略）",
     ),
     "registration_auto_interval_min": SettingDefinition(
         db_key="registration.auto.interval_min",
         default_value=5,
         category=SettingCategory.REGISTRATION,
-        description="自动注册批量任务最小启动间隔（秒）"
+        description="自动注册批量任务最小启动间隔（秒）",
     ),
     "registration_auto_interval_max": SettingDefinition(
         db_key="registration.auto.interval_max",
         default_value=30,
         category=SettingCategory.REGISTRATION,
-        description="自动注册批量任务最大启动间隔（秒）"
+        description="自动注册批量任务最大启动间隔（秒）",
     ),
     "registration_auto_concurrency": SettingDefinition(
         db_key="registration.auto.concurrency",
         default_value=1,
         category=SettingCategory.REGISTRATION,
-        description="自动注册批量任务并发数"
+        description="自动注册批量任务并发数",
     ),
     "registration_auto_mode": SettingDefinition(
         db_key="registration.auto.mode",
         default_value="pipeline",
         category=SettingCategory.REGISTRATION,
-        description="自动注册批量任务模式"
+        description="自动注册批量任务模式",
     ),
     "registration_auto_cpa_service_id": SettingDefinition(
         db_key="registration.auto.cpa_service_id",
         default_value=0,
         category=SettingCategory.REGISTRATION,
-        description="自动注册监控并回传的 CPA 服务 ID"
+        description="自动注册监控并回传的 CPA 服务 ID",
     ),
     "email_service_priority": SettingDefinition(
         db_key="email.service_priority",
@@ -390,7 +391,7 @@ SETTING_DEFINITIONS: Dict[str, SettingDefinition] = {
         db_key="tempmail.enabled",
         default_value=True,
         category=SettingCategory.TEMPMAIL,
-        description="是否启用 Tempmail 渠道"
+        description="是否启用 Tempmail 渠道",
     ),
     "tempmail_base_url": SettingDefinition(
         db_key="tempmail.base_url",
@@ -402,7 +403,7 @@ SETTING_DEFINITIONS: Dict[str, SettingDefinition] = {
         db_key="tempmail.enabled",
         default_value=True,
         category=SettingCategory.TEMPMAIL,
-        description="是否启用 Tempmail.lol 渠道"
+        description="是否启用 Tempmail.lol 渠道",
     ),
     "tempmail_timeout": SettingDefinition(
         db_key="tempmail.timeout",
@@ -528,6 +529,49 @@ SETTING_DEFINITIONS: Dict[str, SettingDefinition] = {
         category=SettingCategory.EMAIL,
         description="验证码轮询间隔（秒）",
     ),
+    "hero_sms_enabled": SettingDefinition(
+        db_key="hero_sms.enabled",
+        default_value=False,
+        category=SettingCategory.SMS,
+        description="是否启用 Hero SMS 渠道",
+    ),
+    "hero_sms_api_key": SettingDefinition(
+        db_key="hero_sms.api_key",
+        default_value="",
+        category=SettingCategory.SMS,
+        description="Hero SMS API Key",
+        is_secret=True,
+    ),
+    "hero_sms_base_url": SettingDefinition(
+        db_key="hero_sms.base_url",
+        default_value="",
+        category=SettingCategory.SMS,
+        description="Hero SMS API 地址",
+    ),
+    "hero_sms_service": SettingDefinition(
+        db_key="hero_sms.service",
+        default_value="",
+        category=SettingCategory.SMS,
+        description="Hero SMS 服务标识",
+    ),
+    "hero_sms_country": SettingDefinition(
+        db_key="hero_sms.country",
+        default_value="",
+        category=SettingCategory.SMS,
+        description="Hero SMS 国家/地区代码",
+    ),
+    "hero_sms_poll_interval": SettingDefinition(
+        db_key="hero_sms.poll_interval",
+        default_value=5,
+        category=SettingCategory.SMS,
+        description="Hero SMS 轮询间隔（秒）",
+    ),
+    "hero_sms_timeout": SettingDefinition(
+        db_key="hero_sms.timeout",
+        default_value=30,
+        category=SettingCategory.SMS,
+        description="Hero SMS 超时时间（秒）",
+    ),
     # Outlook 配置
     "outlook_provider_priority": SettingDefinition(
         db_key="outlook.provider_priority",
@@ -604,6 +648,9 @@ SETTING_TYPES: Dict[str, Type] = {
     "cpa_enabled": bool,
     "email_code_timeout": int,
     "email_code_poll_interval": int,
+    "hero_sms_enabled": bool,
+    "hero_sms_poll_interval": int,
+    "hero_sms_timeout": int,
     "outlook_provider_priority": list,
     "outlook_health_failure_threshold": int,
     "outlook_health_disable_duration": int,
@@ -947,6 +994,14 @@ class Settings(BaseModel):
     # 验证码配置
     email_code_timeout: int = 120
     email_code_poll_interval: int = 3
+
+    hero_sms_enabled: bool = False
+    hero_sms_api_key: Optional[SecretStr] = None
+    hero_sms_base_url: str = ""
+    hero_sms_service: str = ""
+    hero_sms_country: str = ""
+    hero_sms_poll_interval: int = 5
+    hero_sms_timeout: int = 30
 
     # Outlook 配置
     outlook_provider_priority: List[str] = ["imap_old", "imap_new", "graph_api"]

@@ -85,6 +85,9 @@ const elements = {
     testNewApiServiceBtn: document.getElementById('test-new-api-service-btn'),
     // 验证码设置
     emailCodeForm: document.getElementById('email-code-form'),
+    heroSmsSettingsForm: document.getElementById('hero-sms-settings-form'),
+    testHeroSmsBtn: document.getElementById('test-hero-sms-btn'),
+    testHeroSmsServicesBtn: document.getElementById('test-hero-sms-services-btn'),
     // Outlook 设置
     outlookSettingsForm: document.getElementById('outlook-settings-form'),
     // 系统设置（端口 + 访问控制）
@@ -283,6 +286,15 @@ function initEventListeners() {
     if (elements.emailCodeForm) {
         elements.emailCodeForm.addEventListener('submit', handleSaveEmailCode);
     }
+    if (elements.heroSmsSettingsForm) {
+        elements.heroSmsSettingsForm.addEventListener('submit', handleSaveHeroSmsSettings);
+    }
+    if (elements.testHeroSmsBtn) {
+        elements.testHeroSmsBtn.addEventListener('click', handleTestHeroSmsSettings);
+    }
+    if (elements.testHeroSmsServicesBtn) {
+        elements.testHeroSmsServicesBtn.addEventListener('click', handleTestHeroSmsServices);
+    }
 
     // Outlook 设置
     if (elements.outlookSettingsForm) {
@@ -404,6 +416,24 @@ async function loadSettings() {
         if (data.email_code) {
             document.getElementById('email-code-timeout').value = data.email_code.timeout || 120;
             document.getElementById('email-code-poll-interval').value = data.email_code.poll_interval || 3;
+        }
+
+        // Hero SMS 配置
+        if (data.hero_sms) {
+            document.getElementById('hero-sms-enabled').checked = data.hero_sms.enabled || false;
+            document.getElementById('hero-sms-base-url').value = data.hero_sms.base_url || '';
+            document.getElementById('hero-sms-service').value = data.hero_sms.service || '';
+            document.getElementById('hero-sms-country').value = data.hero_sms.country || '';
+            document.getElementById('hero-sms-poll-interval').value = data.hero_sms.poll_interval || 5;
+            document.getElementById('hero-sms-timeout').value = data.hero_sms.timeout || 30;
+            const keyInput = document.getElementById('hero-sms-api-key');
+            if (data.hero_sms.has_api_key) {
+                keyInput.placeholder = '已配置，留空保持不变';
+                keyInput.value = '';
+            } else {
+                keyInput.placeholder = '请输入 API Key';
+                keyInput.value = '';
+            }
         }
 
         // 加载 Outlook 设置
@@ -593,6 +623,148 @@ async function handleSaveEmailCode(e) {
         toast.success('验证码配置已保存');
     } catch (error) {
         toast.error('保存失败: ' + error.message);
+    }
+}
+
+// 保存 Hero SMS 设置
+async function handleSaveHeroSmsSettings(e) {
+    e.preventDefault();
+
+    const data = {
+        enabled: document.getElementById('hero-sms-enabled').checked,
+        base_url: document.getElementById('hero-sms-base-url').value.trim(),
+        service: document.getElementById('hero-sms-service').value.trim(),
+        country: document.getElementById('hero-sms-country').value.trim(),
+        poll_interval: parseInt(document.getElementById('hero-sms-poll-interval').value, 10),
+        timeout: parseInt(document.getElementById('hero-sms-timeout').value, 10)
+    };
+
+    if (data.country && !/^\d+$/.test(data.country)) {
+        toast.error('Hero SMS 国家/地区必须填写国家数字 ID，例如 1 或 187');
+        return;
+    }
+
+    if (!Number.isFinite(data.poll_interval) || data.poll_interval < 1 || data.poll_interval > 300) {
+        toast.error('Hero SMS 轮询间隔必须在 1-300 秒之间');
+        return;
+    }
+
+    if (!Number.isFinite(data.timeout) || data.timeout < 1 || data.timeout > 600) {
+        toast.error('Hero SMS 超时时间必须在 1-600 秒之间');
+        return;
+    }
+    
+    const apiKey = document.getElementById('hero-sms-api-key').value.trim();
+    if (apiKey) {
+        data.api_key = apiKey;
+    }
+
+    try {
+        await api.post('/settings/hero-sms', data);
+        toast.success('Hero SMS 配置已保存');
+        document.getElementById('hero-sms-api-key').value = '';
+        await loadSettings();
+    } catch (error) {
+        toast.error('保存失败: ' + error.message);
+    }
+}
+
+async function handleTestHeroSmsSettings() {
+    const btn = elements.testHeroSmsBtn;
+    if (!btn) return;
+
+    const data = {
+        base_url: document.getElementById('hero-sms-base-url').value.trim(),
+        service: document.getElementById('hero-sms-service').value.trim(),
+        country: document.getElementById('hero-sms-country').value.trim(),
+        timeout: parseInt(document.getElementById('hero-sms-timeout').value, 10)
+    };
+
+    if (data.country && !/^\d+$/.test(data.country)) {
+        toast.error('Hero SMS 国家/地区必须填写国家数字 ID，例如 1 或 187');
+        return;
+    }
+
+    if (!Number.isFinite(data.timeout) || data.timeout < 1 || data.timeout > 600) {
+        toast.error('Hero SMS 超时时间必须在 1-600 秒之间');
+        return;
+    }
+
+    const apiKey = document.getElementById('hero-sms-api-key').value.trim();
+    if (apiKey) {
+        data.api_key = apiKey;
+    }
+
+    btn.disabled = true;
+    btn.textContent = '测试中...';
+
+    try {
+        const result = await api.post('/settings/hero-sms/test', data);
+        let msg = result.message || (result.success ? 'Hero SMS 配置可用' : 'Hero SMS 配置测试失败');
+        let details = [];
+        if (result.has_service !== undefined) details.push(`服务:${result.has_service ? '✔' : '✖'}`);
+        if (result.has_country !== undefined) details.push(`国家:${result.has_country ? '✔' : '✖'}`);
+        if (result.config_complete !== undefined) details.push(`完整:${result.config_complete ? '✔' : '✖'}`);
+        if (details.length > 0) msg += ` [${details.join(' ')}]`;
+
+        if (result.success) {
+            if (result.config_complete === false) {
+                toast.warning(msg);
+            } else {
+                toast.success(msg);
+            }
+        } else {
+            toast.error(msg);
+        }
+    } catch (error) {
+        toast.error('测试失败: ' + error.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🔌 测试配置';
+    }
+}
+
+async function handleTestHeroSmsServices() {
+    const btn = elements.testHeroSmsServicesBtn;
+    if (!btn) return;
+
+    const data = {
+        base_url: document.getElementById('hero-sms-base-url').value.trim(),
+        service: document.getElementById('hero-sms-service').value.trim(),
+        country: document.getElementById('hero-sms-country').value.trim(),
+        timeout: parseInt(document.getElementById('hero-sms-timeout').value, 10)
+    };
+
+    if (data.country && !/^\d+$/.test(data.country)) {
+        toast.error('Hero SMS 国家/地区必须填写国家数字 ID，例如 1 或 187');
+        return;
+    }
+
+    if (!Number.isFinite(data.timeout) || data.timeout < 1 || data.timeout > 600) {
+        toast.error('Hero SMS 超时时间必须在 1-600 秒之间');
+        return;
+    }
+
+    const apiKey = document.getElementById('hero-sms-api-key').value.trim();
+    if (apiKey) {
+        data.api_key = apiKey;
+    }
+
+    btn.disabled = true;
+    btn.textContent = '测试中...';
+
+    try {
+        const result = await api.post('/settings/hero-sms/test-services', data);
+        if (result.success) {
+            toast.success(result.message || '服务列表获取成功');
+        } else {
+            toast.error(result.message || '服务列表获取失败');
+        }
+    } catch (error) {
+        toast.error('测试失败: ' + error.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '📋 测试服务列表';
     }
 }
 

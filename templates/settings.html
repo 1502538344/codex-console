@@ -686,6 +686,60 @@ user:pass@127.0.0.1:7890
 
                 <div class="card" style="margin-top: var(--spacing-lg);">
                     <div class="card-header">
+                        <h3>Hero SMS 配置</h3>
+                        <span class="hint">命中 add-phone 手机验证页时，用于自动购买号码并接收短信验证码</span>
+                    </div>
+                    <div class="card-body">
+                        <form id="hero-sms-settings-form">
+                            <div class="form-group">
+                                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                                    <input type="checkbox" id="hero-sms-enabled" name="enabled">
+                                    <span>启用 Hero SMS 自动手机验证</span>
+                                </label>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="hero-sms-base-url">API 地址</label>
+                                    <input type="text" id="hero-sms-base-url" name="base_url" placeholder="https://hero-sms.com/stubs/handler_api.php">
+                                    <span class="hint">留空使用默认官方地址</span>
+                                </div>
+                                <div class="form-group">
+                                    <label for="hero-sms-api-key">API Key</label>
+                                    <input type="password" id="hero-sms-api-key" name="api_key" placeholder="请输入 API Key" autocomplete="new-password">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="hero-sms-service">服务代号</label>
+                                    <input type="text" id="hero-sms-service" name="service" placeholder="例如: openai" autocomplete="off">
+                                </div>
+                                <div class="form-group">
+                                    <label for="hero-sms-country">国家/地区</label>
+                                    <input type="text" id="hero-sms-country" name="country" placeholder="例如: 1 或 187（国家数字 ID）" autocomplete="off">
+                                    <span class="hint">Hero SMS 要求填写国家数字 ID，不支持 US 这类国家代码</span>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="hero-sms-poll-interval">轮询间隔 (秒)</label>
+                                    <input type="number" id="hero-sms-poll-interval" name="poll_interval" value="5" min="1" max="300">
+                                </div>
+                                <div class="form-group">
+                                    <label for="hero-sms-timeout">等待超时 (秒)</label>
+                                    <input type="number" id="hero-sms-timeout" name="timeout" value="30" min="1" max="600">
+                                </div>
+                            </div>
+                            <div class="form-actions">
+                                <button type="submit" class="btn btn-primary">💾 保存 Hero SMS 设置</button>
+                                <button type="button" class="btn btn-secondary" id="test-hero-sms-btn">🔌 测试配置</button>
+                                <button type="button" class="btn btn-secondary" id="test-hero-sms-services-btn">📋 测试服务列表</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-top: var(--spacing-lg);">
+                    <div class="card-header">
                         <h3>验证码获取策略</h3>
                     </div>
                     <div class="card-body">

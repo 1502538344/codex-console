@@ -4,7 +4,7 @@
 
 import logging
 import os
-from typing import Optional
+from typing import Any, Optional, cast
 
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel
@@ -17,6 +17,7 @@ from ...core.auto_registration import (
 from ...database import crud
 from ...database.session import get_db
 from ...services import EmailServiceType
+from ...services.hero_sms import HeroSMSClient, HeroSMSServiceError
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -24,8 +25,10 @@ router = APIRouter()
 
 # ============== Pydantic Models ==============
 
+
 class SettingItem(BaseModel):
     """设置项"""
+
     key: str
     value: str
     description: Optional[str] = None
@@ -34,11 +37,13 @@ class SettingItem(BaseModel):
 
 class SettingUpdateRequest(BaseModel):
     """设置更新请求"""
+
     value: str
 
 
 class ProxySettings(BaseModel):
     """代理设置"""
+
     enabled: bool = False
     type: str = "http"  # http, socks5
     host: str = "127.0.0.1"
@@ -49,6 +54,7 @@ class ProxySettings(BaseModel):
 
 class RegistrationSettings(BaseModel):
     """注册设置"""
+
     max_retries: int = 3
     timeout: int = 120
     default_password_length: int = 12
@@ -70,17 +76,48 @@ class RegistrationSettings(BaseModel):
 
 class WebUISettings(BaseModel):
     """Web UI 设置"""
+
     host: Optional[str] = None
     port: Optional[int] = None
     debug: Optional[bool] = None
     access_password: Optional[str] = None
 
 
+class HeroSMSSettings(BaseModel):
+    enabled: bool = False
+    api_key: Optional[str] = None
+    base_url: str = ""
+    service: str = ""
+    country: str = ""
+    poll_interval: int = 5
+    timeout: int = 30
+
+
+class HeroSMSTestRequest(BaseModel):
+    api_key: Optional[str] = None
+    base_url: str = ""
+    service: str = ""
+    country: str = ""
+    timeout: Optional[int] = None
+
+
+def _validate_hero_sms_country(country: str) -> str:
+    value = str(country or "").strip()
+    if value and (not value.isdigit()):
+        raise HTTPException(
+            status_code=400,
+            detail="Hero SMS 国家/地区必须填写国家数字 ID，例如 187，不能填 US 这类国家代码",
+        )
+    return value
+
+
 class AllSettings(BaseModel):
     """所有设置"""
+
     proxy: ProxySettings
     registration: RegistrationSettings
     webui: WebUISettings
+    hero_sms: Optional[HeroSMSSettings] = None
 
 
 class AutoQuickRefreshSettingsRequest(BaseModel):
@@ -91,6 +128,7 @@ class AutoQuickRefreshSettingsRequest(BaseModel):
 
 
 # ============== API Endpoints ==============
+
 
 @router.get("")
 async def get_all_settings():
@@ -112,7 +150,10 @@ async def get_all_settings():
             "dynamic_api_url": settings.proxy_dynamic_api_url,
             "dynamic_api_key_header": settings.proxy_dynamic_api_key_header,
             "dynamic_result_field": settings.proxy_dynamic_result_field,
-            "has_dynamic_api_key": bool(settings.proxy_dynamic_api_key and settings.proxy_dynamic_api_key.get_secret_value()),
+            "has_dynamic_api_key": bool(
+                settings.proxy_dynamic_api_key
+                and settings.proxy_dynamic_api_key.get_secret_value()
+            ),
         },
         "registration": {
             "max_retries": settings.registration_max_retries,
@@ -137,7 +178,10 @@ async def get_all_settings():
             "host": settings.webui_host,
             "port": settings.webui_port,
             "debug": settings.debug,
-            "has_access_password": bool(settings.webui_access_password and settings.webui_access_password.get_secret_value()),
+            "has_access_password": bool(
+                settings.webui_access_password
+                and settings.webui_access_password.get_secret_value()
+            ),
         },
         "tempmail": {
             "enabled": settings.tempmail_enabled,
@@ -153,11 +197,26 @@ async def get_all_settings():
             "default_domain": settings.yyds_mail_default_domain,
             "timeout": settings.yyds_mail_timeout,
             "max_retries": settings.yyds_mail_max_retries,
-            "has_api_key": bool(settings.yyds_mail_api_key and settings.yyds_mail_api_key.get_secret_value()),
+            "has_api_key": bool(
+                settings.yyds_mail_api_key
+                and settings.yyds_mail_api_key.get_secret_value()
+            ),
         },
         "email_code": {
             "timeout": settings.email_code_timeout,
             "poll_interval": settings.email_code_poll_interval,
+        },
+        "hero_sms": {
+            "enabled": settings.hero_sms_enabled,
+            "base_url": settings.hero_sms_base_url,
+            "service": settings.hero_sms_service,
+            "country": settings.hero_sms_country,
+            "poll_interval": settings.hero_sms_poll_interval,
+            "timeout": settings.hero_sms_timeout,
+            "has_api_key": bool(
+                settings.hero_sms_api_key
+                and settings.hero_sms_api_key.get_secret_value()
+            ),
         },
     }
 
@@ -188,7 +247,10 @@ async def update_auto_quick_refresh_settings(request: AutoQuickRefreshSettingsRe
     interval_minutes = int(request.interval_minutes)
     retry_limit = int(request.retry_limit)
 
-    if interval_minutes < AUTO_MIN_INTERVAL_MINUTES or interval_minutes > AUTO_MAX_INTERVAL_MINUTES:
+    if (
+        interval_minutes < AUTO_MIN_INTERVAL_MINUTES
+        or interval_minutes > AUTO_MAX_INTERVAL_MINUTES
+    ):
         raise HTTPException(
             status_code=400,
             detail=f"interval_minutes must be between {AUTO_MIN_INTERVAL_MINUTES} and {AUTO_MAX_INTERVAL_MINUTES}",
@@ -227,12 +289,16 @@ async def get_dynamic_proxy_settings():
         "api_url": settings.proxy_dynamic_api_url,
         "api_key_header": settings.proxy_dynamic_api_key_header,
         "result_field": settings.proxy_dynamic_result_field,
-        "has_api_key": bool(settings.proxy_dynamic_api_key and settings.proxy_dynamic_api_key.get_secret_value()),
+        "has_api_key": bool(
+            settings.proxy_dynamic_api_key
+            and settings.proxy_dynamic_api_key.get_secret_value()
+        ),
     }
 
 
 class DynamicProxySettings(BaseModel):
     """动态代理设置"""
+
     enabled: bool = False
     api_url: str = ""
     api_key: Optional[str] = None
@@ -284,23 +350,37 @@ async def test_dynamic_proxy(request: DynamicProxySettings):
     # 用获取到的代理测试连通性
     import time
     from curl_cffi import requests as cffi_requests
+
     try:
-        proxies = {"http": proxy_url, "https": proxy_url}
+        proxies = cast(Any, {"http": proxy_url, "https": proxy_url})
         start = time.time()
         resp = cffi_requests.get(
             "https://api.ipify.org?format=json",
             proxies=proxies,
             timeout=10,
-            impersonate="chrome110"
+            impersonate="chrome110",
         )
         elapsed = round((time.time() - start) * 1000)
         if resp.status_code == 200:
             ip = resp.json().get("ip", "")
-            return {"success": True, "proxy_url": proxy_url, "ip": ip, "response_time": elapsed,
-                    "message": f"动态代理可用，出口 IP: {ip}，响应时间: {elapsed}ms"}
-        return {"success": False, "proxy_url": proxy_url, "message": f"代理连接失败: HTTP {resp.status_code}"}
+            return {
+                "success": True,
+                "proxy_url": proxy_url,
+                "ip": ip,
+                "response_time": elapsed,
+                "message": f"动态代理可用，出口 IP: {ip}，响应时间: {elapsed}ms",
+            }
+        return {
+            "success": False,
+            "proxy_url": proxy_url,
+            "message": f"代理连接失败: HTTP {resp.status_code}",
+        }
     except Exception as e:
-        return {"success": False, "proxy_url": proxy_url, "message": f"代理连接失败: {e}"}
+        return {
+            "success": False,
+            "proxy_url": proxy_url,
+            "message": f"代理连接失败: {e}",
+        }
 
 
 @router.get("/registration")
@@ -351,10 +431,17 @@ async def update_registration_settings(request: RegistrationSettings):
         raise HTTPException(status_code=400, detail="entry_flow 仅支持 native / abcard")
 
     if request.auto_check_interval < 5 or request.auto_check_interval > 3600:
-        raise HTTPException(status_code=400, detail="自动注册检查间隔必须在 5-3600 秒之间")
+        raise HTTPException(
+            status_code=400, detail="自动注册检查间隔必须在 5-3600 秒之间"
+        )
 
-    if request.auto_min_ready_auth_files < 1 or request.auto_min_ready_auth_files > 10000:
-        raise HTTPException(status_code=400, detail="自动注册保底数量必须在 1-10000 之间")
+    if (
+        request.auto_min_ready_auth_files < 1
+        or request.auto_min_ready_auth_files > 10000
+    ):
+        raise HTTPException(
+            status_code=400, detail="自动注册保底数量必须在 1-10000 之间"
+        )
 
     try:
         EmailServiceType(request.auto_email_service_type)
@@ -362,36 +449,62 @@ async def update_registration_settings(request: RegistrationSettings):
         raise HTTPException(status_code=400, detail="自动注册邮箱服务类型无效") from exc
 
     normalized_auto_email_service_type = (
-        "imap_mail" if request.auto_email_service_type == "catchall_imap" else request.auto_email_service_type
+        "imap_mail"
+        if request.auto_email_service_type == "catchall_imap"
+        else request.auto_email_service_type
     )
 
-    if request.auto_interval_min < 0 or request.auto_interval_max < request.auto_interval_min:
+    if (
+        request.auto_interval_min < 0
+        or request.auto_interval_max < request.auto_interval_min
+    ):
         raise HTTPException(status_code=400, detail="自动注册间隔时间参数无效")
 
     if request.auto_concurrency < 1 or request.auto_concurrency > 100:
         raise HTTPException(status_code=400, detail="自动注册并发数必须在 1-100 之间")
 
     if request.auto_mode not in ("parallel", "pipeline"):
-        raise HTTPException(status_code=400, detail="自动注册模式必须为 parallel 或 pipeline")
+        raise HTTPException(
+            status_code=400, detail="自动注册模式必须为 parallel 或 pipeline"
+        )
 
     if request.auto_enabled and request.auto_cpa_service_id <= 0:
-        raise HTTPException(status_code=400, detail="启用自动注册时必须选择一个 CPA 服务")
+        raise HTTPException(
+            status_code=400, detail="启用自动注册时必须选择一个 CPA 服务"
+        )
 
     with get_db() as db:
         if request.auto_enabled:
             cpa_service = crud.get_cpa_service_by_id(db, request.auto_cpa_service_id)
-            if not cpa_service or not cpa_service.enabled:
-                raise HTTPException(status_code=400, detail="自动注册选择的 CPA 服务不存在或已禁用")
+            cpa_service_enabled = (
+                cast(bool, cpa_service.enabled) if cpa_service else False
+            )
+            if not cpa_service or not cpa_service_enabled:
+                raise HTTPException(
+                    status_code=400, detail="自动注册选择的 CPA 服务不存在或已禁用"
+                )
 
         if request.auto_email_service_id > 0:
-            email_service = crud.get_email_service_by_id(db, request.auto_email_service_id)
-            if not email_service or not email_service.enabled:
-                raise HTTPException(status_code=400, detail="自动注册选择的邮箱服务不存在或已禁用")
+            email_service = crud.get_email_service_by_id(
+                db, request.auto_email_service_id
+            )
+            email_service_enabled = (
+                cast(bool, email_service.enabled) if email_service else False
+            )
+            if not email_service or not email_service_enabled:
+                raise HTTPException(
+                    status_code=400, detail="自动注册选择的邮箱服务不存在或已禁用"
+                )
+            email_service_type = cast(str, email_service.service_type)
             normalized_service_type = (
-                "imap_mail" if email_service.service_type == "catchall_imap" else email_service.service_type
+                "imap_mail"
+                if email_service_type == "catchall_imap"
+                else email_service_type
             )
             if normalized_service_type != normalized_auto_email_service_type:
-                raise HTTPException(status_code=400, detail="自动注册邮箱服务类型与指定服务不匹配")
+                raise HTTPException(
+                    status_code=400, detail="自动注册邮箱服务类型与指定服务不匹配"
+                )
 
     update_settings(
         registration_max_retries=request.max_retries,
@@ -500,6 +613,7 @@ async def backup_database():
 
     # 创建备份目录
     from pathlib import Path as FilePath
+
     backup_dir = FilePath(db_path).parent / "backups"
     backup_dir.mkdir(exist_ok=True)
 
@@ -513,7 +627,7 @@ async def backup_database():
     return {
         "success": True,
         "message": "数据库备份成功",
-        "backup_path": str(backup_path)
+        "backup_path": str(backup_path),
     }
 
 
@@ -539,7 +653,9 @@ async def import_database(file: UploadFile = File(...)):
     filename = (file.filename or "").lower()
     allowed_ext = (".db", ".sqlite", ".sqlite3")
     if filename and not filename.endswith(allowed_ext):
-        raise HTTPException(status_code=400, detail="仅支持 .db / .sqlite / .sqlite3 文件")
+        raise HTTPException(
+            status_code=400, detail="仅支持 .db / .sqlite / .sqlite3 文件"
+        )
 
     if not db_file.exists():
         raise HTTPException(status_code=404, detail="数据库文件不存在")
@@ -549,10 +665,7 @@ async def import_database(file: UploadFile = File(...)):
     try:
         db_file.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.NamedTemporaryFile(
-            prefix="db_import_",
-            suffix=".db",
-            dir=str(db_file.parent),
-            delete=False
+            prefix="db_import_", suffix=".db", dir=str(db_file.parent), delete=False
         ) as tmp:
             temp_path = FilePath(tmp.name)
             while True:
@@ -609,10 +722,7 @@ async def import_database(file: UploadFile = File(...)):
 
 
 @router.post("/database/cleanup")
-async def cleanup_database(
-    days: int = 30,
-    keep_failed: bool = True
-):
+async def cleanup_database(days: int = 30, keep_failed: bool = True):
     """清理过期数据"""
     from datetime import timedelta
     from ...core.timezone_utils import utcnow_naive
@@ -630,9 +740,7 @@ async def cleanup_database(
         else:
             conditions.append(RegistrationTask.status.in_(["completed", "cancelled"]))
 
-        result = db.execute(
-            delete(RegistrationTask).where(*conditions)
-        )
+        result = db.execute(delete(RegistrationTask).where(*conditions))
         db.commit()
 
         deleted_count = result.rowcount
@@ -640,15 +748,12 @@ async def cleanup_database(
     return {
         "success": True,
         "message": f"已清理 {deleted_count} 条过期任务记录",
-        "deleted_count": deleted_count
+        "deleted_count": deleted_count,
     }
 
 
 @router.get("/logs")
-async def get_recent_logs(
-    lines: int = 100,
-    level: str = "INFO"
-):
+async def get_recent_logs(lines: int = 100, level: str = "INFO"):
     """获取最近日志"""
     settings = get_settings()
 
@@ -657,6 +762,7 @@ async def get_recent_logs(
         return {"logs": [], "message": "日志文件未配置"}
 
     from pathlib import Path
+
     log_path = Path(log_file)
 
     if not log_path.exists():
@@ -669,7 +775,7 @@ async def get_recent_logs(
 
         return {
             "logs": [line.strip() for line in recent_lines],
-            "total_lines": len(all_lines)
+            "total_lines": len(all_lines),
         }
     except Exception as e:
         return {"logs": [], "error": str(e)}
@@ -677,8 +783,10 @@ async def get_recent_logs(
 
 # ============== 临时邮箱设置 ==============
 
+
 class TempmailSettings(BaseModel):
     """临时邮箱设置"""
+
     api_url: Optional[str] = None
     enabled: Optional[bool] = None
     yyds_api_url: Optional[str] = None
@@ -689,8 +797,225 @@ class TempmailSettings(BaseModel):
 
 class EmailCodeSettings(BaseModel):
     """验证码等待设置"""
+
     timeout: int = 120  # 验证码等待超时（秒）
     poll_interval: int = 3  # 验证码轮询间隔（秒）
+
+
+@router.get("/hero-sms")
+async def get_hero_sms_settings():
+    settings = get_settings()
+    return {
+        "enabled": settings.hero_sms_enabled,
+        "base_url": settings.hero_sms_base_url,
+        "service": settings.hero_sms_service,
+        "country": settings.hero_sms_country,
+        "poll_interval": settings.hero_sms_poll_interval,
+        "timeout": settings.hero_sms_timeout,
+        "has_api_key": bool(
+            settings.hero_sms_api_key and settings.hero_sms_api_key.get_secret_value()
+        ),
+    }
+
+
+@router.post("/hero-sms")
+async def update_hero_sms_settings(request: HeroSMSSettings):
+    if request.poll_interval < 1 or request.poll_interval > 300:
+        raise HTTPException(
+            status_code=400, detail="Hero SMS 轮询间隔必须在 1-300 秒之间"
+        )
+
+    if request.timeout < 1 or request.timeout > 600:
+        raise HTTPException(
+            status_code=400, detail="Hero SMS 超时时间必须在 1-600 秒之间"
+        )
+
+    update_dict = {
+        "hero_sms_enabled": request.enabled,
+        "hero_sms_base_url": request.base_url.strip(),
+        "hero_sms_service": request.service.strip(),
+        "hero_sms_country": _validate_hero_sms_country(request.country),
+        "hero_sms_poll_interval": request.poll_interval,
+        "hero_sms_timeout": request.timeout,
+    }
+    if request.api_key is not None:
+        update_dict["hero_sms_api_key"] = request.api_key.strip()
+
+    update_settings(**update_dict)
+    return {"success": True, "message": "Hero SMS 设置已更新"}
+
+
+@router.post("/hero-sms/test")
+async def test_hero_sms_settings(request: HeroSMSTestRequest):
+    settings = get_settings()
+
+    api_key = (request.api_key or "").strip()
+    if not api_key and settings.hero_sms_api_key:
+        api_key = settings.hero_sms_api_key.get_secret_value().strip()
+
+    if not api_key:
+        return {"success": False, "message": "请先填写 Hero SMS API Key"}
+
+    base_url = (request.base_url or settings.hero_sms_base_url or "").strip()
+    service = (request.service or settings.hero_sms_service or "").strip()
+    country = _validate_hero_sms_country(
+        request.country or settings.hero_sms_country or ""
+    )
+    timeout = (
+        request.timeout if request.timeout is not None else settings.hero_sms_timeout
+    )
+
+    if timeout is None or timeout < 1 or timeout > 600:
+        raise HTTPException(
+            status_code=400, detail="Hero SMS 超时时间必须在 1-600 秒之间"
+        )
+
+    try:
+        client = HeroSMSClient(
+            {
+                "api_key": api_key,
+                "base_url": base_url or HeroSMSClient.DEFAULT_BASE_URL,
+                "service": service,
+                "country": country,
+                "timeout": timeout,
+                "poll_timeout": timeout,
+                "poll_interval": 5,
+                "proxy_url": settings.proxy_url,
+            }
+        )
+        balance_result = client.get_balance()
+        balance = balance_result.get("balance")
+        balance_text = f"{balance}" if balance is not None else "未知"
+        # Metadata about provided configuration (do not expose api_key)
+        has_service = bool(service)
+        has_country = bool(country)
+        has_base_url = bool(base_url)
+        # Consider config complete if api_key is present and at least service or country provided
+        config_complete = bool(api_key and (has_service or has_country))
+
+        hints = []
+        if not has_service:
+            hints.append("未指定 service，部分功能可能无法工作")
+        if not has_country:
+            hints.append("未指定 country，服务过滤可能较宽")
+        else:
+            hints.append("country 已按国家数字 ID 传递")
+        if not has_base_url:
+            hints.append("未指定 base_url，使用默认服务端点")
+
+        return {
+            "success": True,
+            "balance": balance,
+            "message": f"Hero SMS 连接成功，当前余额: {balance_text}",
+            "has_service": has_service,
+            "has_country": has_country,
+            "has_base_url": has_base_url,
+            "config_complete": config_complete,
+            "hints": hints,
+        }
+    except (ValueError, HeroSMSServiceError) as exc:
+        # still provide configuration metadata when possible
+        has_service = bool(service)
+        has_country = bool(country)
+        has_base_url = bool(base_url)
+        config_complete = bool(api_key and (has_service or has_country))
+        return {
+            "success": False,
+            "message": str(exc),
+            "has_service": has_service,
+            "has_country": has_country,
+            "has_base_url": has_base_url,
+            "config_complete": config_complete,
+        }
+    except Exception as exc:
+        logger.exception("测试 Hero SMS 配置失败")
+        has_service = bool(service)
+        has_country = bool(country)
+        has_base_url = bool(base_url)
+        config_complete = bool(api_key and (has_service or has_country))
+        return {
+            "success": False,
+            "message": f"测试失败: {exc}",
+            "has_service": has_service,
+            "has_country": has_country,
+            "has_base_url": has_base_url,
+            "config_complete": config_complete,
+        }
+
+
+@router.post("/hero-sms/test-services")
+async def test_hero_sms_services(request: HeroSMSTestRequest):
+    """安全地从 Hero SMS 拉取服务列表（不会购买号码）"""
+    settings = get_settings()
+
+    api_key = (request.api_key or "").strip()
+    if api_key == "use_saved_key" or not api_key:
+        if settings.hero_sms_api_key:
+            api_key = settings.hero_sms_api_key.get_secret_value().strip()
+
+    if not api_key:
+        return {"success": False, "message": "请先填写 Hero SMS API Key"}
+
+    base_url = (request.base_url or settings.hero_sms_base_url or "").strip()
+    country = _validate_hero_sms_country(
+        request.country or settings.hero_sms_country or ""
+    )
+    timeout = (
+        request.timeout if request.timeout is not None else settings.hero_sms_timeout
+    )
+
+    if timeout is None or timeout < 1 or timeout > 600:
+        raise HTTPException(
+            status_code=400, detail="Hero SMS 超时时间必须在 1-600 秒之间"
+        )
+
+    try:
+        client = HeroSMSClient(
+            {
+                "api_key": api_key,
+                "base_url": base_url or HeroSMSClient.DEFAULT_BASE_URL,
+                "timeout": timeout,
+                "poll_timeout": timeout,
+                "poll_interval": 5,
+                "proxy_url": settings.proxy_url,
+            }
+        )
+
+        services = client.get_services_list(country=country or None)
+
+        # Normalize services metadata for response
+        services_count = 0
+        services_sample = None
+        if isinstance(services, list):
+            services_count = len(services)
+            # Provide a small sample (first 10) to help UI show examples
+            services_sample = services[:10]
+        elif isinstance(services, dict):
+            # If dict, give keys count and a shallow preview
+            services_count = len(services.keys())
+            # sample as list of first 10 (key, value)
+            services_sample = []
+            for i, (k, v) in enumerate(services.items()):
+                if i >= 10:
+                    break
+                services_sample.append({"service": k, "meta": v})
+        else:
+            # unknown shape, return raw
+            services_sample = services
+
+        return {
+            "success": True,
+            "message": f"拉取服务列表成功，服务数量: {services_count}",
+            "services_count": services_count,
+            "services_sample": services_sample,
+            # include raw metadata shape indicator (no secrets)
+            "services_raw_type": type(services).__name__,
+        }
+    except (ValueError, HeroSMSServiceError) as exc:
+        return {"success": False, "message": str(exc)}
+    except Exception as exc:
+        logger.exception("测试 Hero SMS 服务列表失败")
+        return {"success": False, "message": f"测试失败: {exc}"}
 
 
 @router.get("/tempmail")
@@ -711,7 +1036,10 @@ async def get_tempmail_settings():
             "timeout": settings.yyds_mail_timeout,
             "max_retries": settings.yyds_mail_max_retries,
             "enabled": settings.yyds_mail_enabled,
-            "has_api_key": bool(settings.yyds_mail_api_key and settings.yyds_mail_api_key.get_secret_value()),
+            "has_api_key": bool(
+                settings.yyds_mail_api_key
+                and settings.yyds_mail_api_key.get_secret_value()
+            ),
         },
     }
 
@@ -740,6 +1068,7 @@ async def update_tempmail_settings(request: TempmailSettings):
 
 
 # ============== 验证码等待设置 ==============
+
 
 @router.get("/email-code")
 async def get_email_code_settings():
@@ -770,8 +1099,10 @@ async def update_email_code_settings(request: EmailCodeSettings):
 
 # ============== 代理列表 CRUD ==============
 
+
 class ProxyCreateRequest(BaseModel):
     """创建代理请求"""
+
     name: str
     type: str = "http"  # http, socks5
     host: str
@@ -784,6 +1115,7 @@ class ProxyCreateRequest(BaseModel):
 
 class ProxyUpdateRequest(BaseModel):
     """更新代理请求"""
+
     name: Optional[str] = None
     type: Optional[str] = None
     host: Optional[str] = None
@@ -799,10 +1131,7 @@ async def get_proxies_list(enabled: Optional[bool] = None):
     """获取代理列表"""
     with get_db() as db:
         proxies = crud.get_proxies(db, enabled=enabled)
-        return {
-            "proxies": [p.to_dict() for p in proxies],
-            "total": len(proxies)
-        }
+        return {"proxies": [p.to_dict() for p in proxies], "total": len(proxies)}
 
 
 @router.post("/proxies")
@@ -818,7 +1147,7 @@ async def create_proxy_item(request: ProxyCreateRequest):
             username=request.username,
             password=request.password,
             enabled=request.enabled,
-            priority=request.priority
+            priority=request.priority,
         )
         return {"success": True, "proxy": proxy.to_dict()}
 
@@ -897,16 +1226,10 @@ async def test_proxy_item(proxy_id: int):
         start_time = time.time()
 
         try:
-            proxies = {
-                "http": proxy_url,
-                "https": proxy_url
-            }
+            proxies = cast(Any, {"http": proxy_url, "https": proxy_url})
 
             response = cffi_requests.get(
-                test_url,
-                proxies=proxies,
-                timeout=3,
-                impersonate="chrome110"
+                test_url, proxies=proxies, timeout=3, impersonate="chrome110"
             )
 
             elapsed_time = time.time() - start_time
@@ -917,19 +1240,16 @@ async def test_proxy_item(proxy_id: int):
                     "success": True,
                     "ip": ip_info.get("ip", ""),
                     "response_time": round(elapsed_time * 1000),
-                    "message": f"代理连接成功，出口 IP: {ip_info.get('ip', 'unknown')}"
+                    "message": f"代理连接成功，出口 IP: {ip_info.get('ip', 'unknown')}",
                 }
             else:
                 return {
                     "success": False,
-                    "message": f"代理返回错误状态码: {response.status_code}"
+                    "message": f"代理返回错误状态码: {response.status_code}",
                 }
 
         except Exception as e:
-            return {
-                "success": False,
-                "message": f"代理连接失败: {str(e)}"
-            }
+            return {"success": False, "message": f"代理连接失败: {str(e)}"}
 
 
 @router.post("/proxies/test-all")
@@ -948,51 +1268,51 @@ async def test_all_proxies():
             start_time = time.time()
 
             try:
-                proxies_dict = {
-                    "http": proxy_url,
-                    "https": proxy_url
-                }
+                proxies_dict = cast(Any, {"http": proxy_url, "https": proxy_url})
 
                 response = cffi_requests.get(
-                    test_url,
-                    proxies=proxies_dict,
-                    timeout=3,
-                    impersonate="chrome110"
+                    test_url, proxies=proxies_dict, timeout=3, impersonate="chrome110"
                 )
 
                 elapsed_time = time.time() - start_time
 
                 if response.status_code == 200:
                     ip_info = response.json()
-                    results.append({
-                        "id": proxy.id,
-                        "name": proxy.name,
-                        "success": True,
-                        "ip": ip_info.get("ip", ""),
-                        "response_time": round(elapsed_time * 1000)
-                    })
+                    results.append(
+                        {
+                            "id": proxy.id,
+                            "name": proxy.name,
+                            "success": True,
+                            "ip": ip_info.get("ip", ""),
+                            "response_time": round(elapsed_time * 1000),
+                        }
+                    )
                 else:
-                    results.append({
+                    results.append(
+                        {
+                            "id": proxy.id,
+                            "name": proxy.name,
+                            "success": False,
+                            "message": f"状态码: {response.status_code}",
+                        }
+                    )
+
+            except Exception as e:
+                results.append(
+                    {
                         "id": proxy.id,
                         "name": proxy.name,
                         "success": False,
-                        "message": f"状态码: {response.status_code}"
-                    })
-
-            except Exception as e:
-                results.append({
-                    "id": proxy.id,
-                    "name": proxy.name,
-                    "success": False,
-                    "message": str(e)
-                })
+                        "message": str(e),
+                    }
+                )
 
         success_count = sum(1 for r in results if r["success"])
         return {
             "total": len(proxies),
             "success": success_count,
             "failed": len(proxies) - success_count,
-            "results": results
+            "results": results,
         }
 
 
@@ -1018,8 +1338,10 @@ async def disable_proxy(proxy_id: int):
 
 # ============== Outlook 设置 ==============
 
+
 class OutlookSettings(BaseModel):
     """Outlook 设置"""
+
     default_client_id: Optional[str] = None
 
 
@@ -1052,8 +1374,10 @@ async def update_outlook_settings(request: OutlookSettings):
 
 # ============== Team Manager 设置 ==============
 
+
 class TeamManagerSettings(BaseModel):
     """Team Manager 设置"""
+
     enabled: bool = False
     api_url: str = ""
     api_key: str = ""
@@ -1061,6 +1385,7 @@ class TeamManagerSettings(BaseModel):
 
 class TeamManagerTestRequest(BaseModel):
     """Team Manager 测试请求"""
+
     api_url: str
     api_key: str
 
@@ -1072,7 +1397,9 @@ async def get_team_manager_settings():
     return {
         "enabled": settings.tm_enabled,
         "api_url": settings.tm_api_url,
-        "has_api_key": bool(settings.tm_api_key and settings.tm_api_key.get_secret_value()),
+        "has_api_key": bool(
+            settings.tm_api_key and settings.tm_api_key.get_secret_value()
+        ),
     }
 
 
@@ -1092,11 +1419,13 @@ async def update_team_manager_settings(request: TeamManagerSettings):
 @router.post("/team-manager/test")
 async def test_team_manager_connection(request: TeamManagerTestRequest):
     """测试 Team Manager 连接"""
-    from ...core.upload.team_manager_upload import test_team_manager_connection as do_test
+    from ...core.upload.team_manager_upload import (
+        test_team_manager_connection as do_test,
+    )
 
     settings = get_settings()
     api_key = request.api_key
-    if api_key == 'use_saved_key' or not api_key:
+    if api_key == "use_saved_key" or not api_key:
         if settings.tm_api_key:
             api_key = settings.tm_api_key.get_secret_value()
         else:
